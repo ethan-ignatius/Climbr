@@ -1,0 +1,227 @@
+/* ===== Reset & Base ===== */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  color: #000;
+  background: #f8fafc;
+  font: 16px/1.55 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+:root {
+  --brand-blue: #2563eb;
+  --brand-blue-300: #93c5fd;
+  --border: #e5e7eb;
+  --muted: #6b7280;
+  --overlay-bg: rgba(0,0,0,.7);
+}
+
+/* ===== Typography ===== */
+h1, h2, h3 { color: #111827; margin: 0 0 10px; }
+h1 { font-size: 1.75rem; }
+p { margin: 0 0 10px; color: #111827; }
+a { color: var(--brand-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ===== Layout ===== */
+.container { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+.page { padding: 24px 0 48px; }
+
+/* ===== Header / Nav ===== */
+.site-header { background: #fff; border-bottom: 1px solid var(--border); }
+
+/* 3 columns: brand | spacer | right group */
+.nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  min-height: 56px;
+  padding: 12px 0;
+  gap: 12px;
+}
+
+.brand { color: inherit; text-decoration: none; font-weight: 600; }
+
+/* Link groups */
+.links { display: flex; align-items: center; gap: 14px; }
+.links a { color: #000; text-decoration: none; }
+.links a:hover { text-decoration: underline; }
+
+/* Right group is right-aligned; items pack from the right edge */
+.links-right { justify-content: flex-end; }
+
+/* Inline controls in nav */
+.links a,
+.links button,
+.links input[type="button"],
+.links input[type="submit"] { display: inline-flex; align-items: center; }
+
+/* Logout form inline */
+.links form { display: inline; margin: 0; }
+.inline { display: inline; }
+
+/* ===== Footer ===== */
+.site-footer { border-top: 1px solid var(--border); color: #000; padding: 18px 0; font-size: 0.95rem; }
+
+/* ===== Card ===== */
+.card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.1);
+  padding: 16px;
+}
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 14px; border-radius: 12px;
+  border: 1px solid var(--brand-blue); background: var(--brand-blue);
+  color: #fff !important; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.btn:hover { filter: brightness(1.05); }
+.btn:focus { outline: 2px solid var(--brand-blue-300); outline-offset: 2px; }
+
+.btn.btn-outline {
+  background: transparent;
+  color: var(--brand-blue) !important;
+  border: 1px solid var(--brand-blue);
+}
+.btn.btn-outline:hover { background: rgba(37, 99, 235, 0.06); }
+
+/* Prevent underline on button-looking links */
+.links .btn, .links .btn-outline { text-decoration: none; }
+
+/* ===== Forms ===== */
+label { font-weight: 600; color: #111827; }
+input, select, textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+textarea { resize: vertical; min-height: 120px; }
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--brand-blue-300);
+  outline-offset: 2px;
+}
+
+/* Simple form layout helpers */
+.form-grid { display: grid; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field .field-help { color: var(--muted); font-size: 0.9rem; margin-top: 2px; }
+
+/* Errors + flash messages */
+.errorlist {
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 6px 10px;
+  list-style: disc;
+  margin: 8px 0 0 16px;
+}
+.flash { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+.flash.success { background: #ecfdf5; color: #065f46; }
+.flash.error { background: #fef2f2; color: #991b1b; }
+.flash.warning { background: #fffbeb; color: #92400e; }
+
+/* ===== Route image grid (square boxes, full image visible) ===== */
+.routes-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* Each cell is a perfect square, content centered */
+.routes-grid .img-cell {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;      /* square */
+  overflow: hidden;
+  border-radius: 10px;
+  background: #f3f4f6;
+  display: grid;
+  place-items: center;
+}
+
+/* Fill the square as much as possible, no cropping */
+.routes-grid .img-cell > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;       /* preserve aspect, but fill one dimension */
+  display: block;
+}
+
+/* Clickable zoom affordance (optional subtle hover) */
+.routes-grid .img-cell:hover { outline: 2px solid rgba(37, 99, 235, 0.2); }
+
+/* ===== Lightbox (image modal) ===== */
+/* Lightbox (image modal) */
+/* Lightbox (image modal) */
+/* Lightbox (image modal) */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);   /* darker overlay */
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;                 /* small gutter around edges */
+  z-index: 9999;
+}
+.lightbox.is-open { display: flex; }
+
+/* A simple column so caption gets its own space below the image */
+.lightbox .lightbox-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 98vw;
+  max-height: 95vh;
+}
+
+/* Make image large, but leave room for caption */
+.lightbox img {
+  width: min(96vw, 1600px);
+  max-height: 82vh;             /* ↓ a bit smaller so caption fits */
+  height: auto;
+  object-fit: contain;
+  background: transparent;      /* ← no white background */
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+/* Caption styling; allow wrap & scroll if it’s very long */
+.lightbox .caption {
+  color: #e5e7eb;
+  margin-top: 10px;
+  text-align: center;
+  max-width: 96vw;
+  max-height: 10vh;             /* reserve vertical space */
+  overflow: auto;               /* scroll if needed */
+  line-height: 1.35;
+}
+
+/* Close button stays visible on dark bg */
+.lightbox .close-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: 0;
+  background: rgba(0,0,0,.5);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0,0,0,.2);
+}
+
+@media (max-width: 640px) {
+  .lightbox img { width: 96vw; max-height: 78vh; }
+  .lightbox .caption { max-height: 14vh; }
+}

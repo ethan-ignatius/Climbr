@@ -1,0 +1,99 @@
+[
+  {
+    "model": "auth.user",
+    "pk": 101,
+    "fields": {
+      "username": "climber1",
+      "password": "!",
+      "is_superuser": false,
+      "is_staff": false,
+      "is_active": true,
+      "email": "climber1@example.com"
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 102,
+    "fields": {
+      "username": "climber2",
+      "password": "!",
+      "is_superuser": false,
+      "is_staff": false,
+      "is_active": true,
+      "email": "climber2@example.com"
+    }
+  },
+
+  {
+    "model": "routes.route",
+    "pk": 1,
+    "fields": {
+      "author": 101,
+      "title": "Overhang Arete",
+      "description": "Powerful moves on positive edges with a committing top-out.",
+      "difficulty": 7,
+      "picture": null,
+      "video_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "created_at": "2025-09-01T12:00:00Z",
+      "location_name": "Red River Gorge, KY",
+      "latitude": "37.791000",
+      "longitude": "-83.684000"
+    }
+  },
+  {
+    "model": "routes.route",
+    "pk": 2,
+    "fields": {
+      "author": 102,
+      "title": "Slab Smear",
+      "description": "Delicate footwork; trust the rubber. Crux at the last smear.",
+      "difficulty": 4,
+      "picture": null,
+      "video_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "created_at": "2025-09-05T15:30:00Z",
+      "location_name": "Yosemite Valley, CA",
+      "latitude": null,
+      "longitude": null
+    }
+  },
+  {
+    "model": "routes.route",
+    "pk": 3,
+    "fields": {
+      "author": 101,
+      "title": "Crack Chronicles",
+      "description": "Jams all the way—hands to thin fingers. Tape recommended.",
+      "difficulty": 8,
+      "picture": null,
+      "video_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "created_at": "2025-09-10T09:45:00Z",
+      "location_name": "Indian Creek, UT",
+      "latitude": "38.005900",
+      "longitude": "-109.494400"
+    }
+  },
+
+  { "model": "routes.routeimage", "pk": 1001, "fields": {
+      "route": 1, "image": "routes/pictures/overhang_arete_1.jpg", "alt_text": "Overhang Arete - start", "order": 1
+  }},
+  { "model": "routes.routeimage", "pk": 1002, "fields": {
+      "route": 1, "image": "routes/pictures/overhang_arete_2.jpg", "alt_text": "Overhang Arete - crux", "order": 2
+  }},
+  { "model": "routes.routeimage", "pk": 1003, "fields": {
+      "route": 1, "image": "routes/pictures/overhang_arete_3.jpg", "alt_text": "Overhang Arete - top-out", "order": 3
+  }},
+  { "model": "routes.routeimage", "pk": 1004, "fields": {
+      "route": 1, "image": "routes/pictures/overhang_arete_4.jpg", "alt_text": "Overhang Arete - overview", "order": 4
+  }},
+
+  { "model": "routes.routeimage", "pk": 2001, "fields": {
+      "route": 2, "image": "routes/pictures/slab_smear_1.jpg", "alt_text": "Slab Smear - mid section", "order": 1
+  }},
+  { "model": "routes.routeimage", "pk": 2002, "fields": {
+      "route": 2, "image": "routes/pictures/slab_smear_2.jpg", "alt_text": "Slab Smear - finish", "order": 2
+  }},
+
+  { "model": "routes.routeimage", "pk": 3001, "fields": {
+      "route": 3, "image": "routes/pictures/crack_chronicles_1.jpg", "alt_text": "Crack Chronicles - hand jams", "order": 1
+  }}
+]

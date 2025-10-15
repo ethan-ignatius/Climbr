@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ route.title }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <!-- Row 1: title · by user · time -->
+    <div class="row" style="justify-content: space-between; align-items: baseline;">
+      <h1 style="margin:0;">{{ route.title }}</h1>
+      <small class="muted">by {{ route.author.username }} · {{ route.created_at|date:"Y-m-d H:i" }}</small>
+    </div>
+
+    <!-- Row 2: difficulty -->
+    <div style="margin-top:6px;">
+      <span class="badge">Difficulty: {{ route.difficulty }}</span>
+    </div>
+
+    <!-- Row 3: description -->
+    {% if route.description %}
+      <div style="margin-top:10px;"><p>{{ route.description|linebreaksbr }}</p></div>
+    {% endif %}
+
+    <!-- Row 4: map (coords preferred; otherwise search by name) -->
+    {% with route.map_embed_src as map_src %}
+      {% if map_src %}
+        <div style="margin:14px 0; border-radius:10px; overflow:hidden;">
+          <iframe
+            width="600" height="350" style="width:100%; border:0;"
+            loading="lazy" allowfullscreen
+            referrerpolicy="no-referrer-when-downgrade"
+            src="{{ map_src }}">
+          </iframe>
+        </div>
+      {% elif route.location_name %}
+        <p class="muted" style="margin-top:6px;">Location: {{ route.location_name }}</p>
+      {% endif %}
+    {% endwith %}
+
+    <!-- Row 5: images (3 per row, up to 9 total), square, centered; click to zoom -->
+    {% if route.images.all or route.picture %}
+      <div class="routes-grid" style="margin-top:12px;">
+        {% for img in route.images.all|slice:":9" %}
+          <button class="img-cell" data-lightbox="{{ img.image.url }}" data-caption="{{ img.alt_text|default:route.title }}" title="Click to zoom" style="border:0; padding:0; background:none; cursor:pointer;">
+            <img src="{{ img.image.url }}" alt="{{ img.alt_text|default:route.title }}">
+          </button>
+        {% endfor %}
+        {% if route.picture %}
+          <button class="img-cell" data-lightbox="{{ route.picture.url }}" data-caption="{{ route.title }}" title="Click to zoom" style="border:0; padding:0; background:none; cursor:pointer;">
+            <img src="{{ route.picture.url }}" alt="{{ route.title }}">
+          </button>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <!-- Row 6: embedded video (YouTube) -->
+    {% with route.youtube_embed_src as embed %}
+      {% if embed %}
+        <div style="margin:14px 0;">
+          <iframe
+            src="{{ embed }}"
+            title="YouTube video player"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen
+            style="max-width:100%; width:100%; aspect-ratio:16/9; border-radius:10px;"></iframe>
+        </div>
+      {% elif route.video_url %}
+        <p><a href="{{ route.video_url }}" target="_blank" rel="noopener">Watch on YouTube</a></p>
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  <!-- Lightbox root (shared on this page) -->
+  <div class="lightbox" id="lightbox" aria-hidden="true">
+    <button class="close-btn" id="lightbox-close" aria-label="Close">✕</button>
+    <div class="lightbox-body" style="text-align:center;">
+      <img id="lightbox-img" alt="">
+      <div class="caption" id="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const lb = document.getElementById('lightbox');
+      const imgTag = document.getElementById('lightbox-img');
+      const caption = document.getElementById('lightbox-caption');
+      const closeBtn = document.getElementById('lightbox-close');
+
+      function openLightbox(src, cap) {
+        imgTag.src = src;
+        imgTag.alt = cap || '';
+        caption.textContent = cap || '';
+        lb.classList.add('is-open');
+        lb.setAttribute('aria-hidden', 'false');
+      }
+      function closeLightbox() {
+        lb.classList.remove('is-open');
+        lb.setAttribute('aria-hidden', 'true');
+        imgTag.src = '';
+        caption.textContent = '';
+      }
+
+      document.addEventListener('click', function(e) {
+        const target = e.target.closest('[data-lightbox]');
+        if (target) {
+          e.preventDefault();
+          openLightbox(target.getAttribute('data-lightbox'), target.getAttribute('data-caption'));
+        }
+      });
+      closeBtn.addEventListener('click', closeLightbox);
+      lb.addEventListener('click', function(e) { if (e.target === lb) closeLightbox(); });
+      document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeLightbox(); });
+    })();
+  </script>
+{% endblock %}
