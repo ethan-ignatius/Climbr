@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Add Route • Climbr{% endblock %}
+{% block content %}
+<h1>Add Route</h1>
+
+<form method="post" enctype="multipart/form-data" class="card" novalidate>
+  {% csrf_token %}
+
+  {# Top-of-form aggregated errors #}
+  {% if form.errors or form.non_field_errors %}
+  <div class="alert alert-error" id="form-errors">
+    <strong>Please fix the following:</strong>
+    <div class="errors">
+      {% for error in form.title.errors %}
+        <div class="error-item error-title server-error"><strong>{{ form.title.label }}:</strong> {{ error }}</div>
+      {% endfor %}
+
+      {% for error in form.description.errors %}
+        <div class="error-item error-description server-error"><strong>{{ form.description.label }}:</strong> {{ error }}</div>
+      {% endfor %}
+
+      {% for error in form.difficulty.errors %}
+        <div class="error-item error-difficulty server-error"><strong>{{ form.difficulty.label }}:</strong> {{ error }}</div>
+      {% endfor %}
+
+      {% for error in form.latitude.errors %}
+        <div class="error-item error-latitude server-error"><strong>{{ form.latitude.label }}:</strong> {{ error }}</div>
+      {% endfor %}
+
+      {% for error in form.longitude.errors %}
+        <div class="error-item error-longitude server-error"><strong>{{ form.longitude.label }}:</strong> {{ error }}</div>
+      {% endfor %}
+
+      {% for error in form.location_name.errors %}
+        <div class="error-item error-location_name server-error"><strong>{{ form.location_name.label }}:</strong> {{ error }}</div>
+      {% endfor %}
+
+      {% for error in form.non_field_errors %}
+        <div class="error-item error-non_field server-error">{{ error|safe }}</div>
+      {% endfor %}
+
+      {% for error in form.images.errors %}
+        <div class="error-item error-images server-error"><strong>{{ form.images.label|default:'Images' }}:</strong> {{ error }}</div>
+      {% endfor %}
+
+      {% for error in form.video_url.errors %}
+        <div class="error-item error-video_url server-error"><strong>{{ form.video_url.label }}:</strong> {{ error }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="form-row">
+    <label for="id_title">Title</label>
+    {{ form.title }}
+  </div>
+
+  <div class="form-row">
+    <label for="id_description">Description</label>
+    {{ form.description }}
+  </div>
+
+  <div class="form-row">
+    <label for="id_difficulty">Difficulty</label>
+    {{ form.difficulty }}
+  </div>
+
+  <fieldset class="form-fieldset">
+    <legend>Location</legend>
+    <p>Select on the map <em>or</em> enter a location name. If you select on the map, latitude/longitude will be used.</p>
+
+    <div id="map" style="height: 300px; margin-bottom: 0.5rem;"></div>
+
+    <div class="row">
+      <div class="col">
+        <label for="id_latitude">Latitude</label>
+        {{ form.latitude }}
+      </div>
+      <div class="col">
+        <label for="id_longitude">Longitude</label>
+        {{ form.longitude }}
+      </div>
+    </div>
+
+    <label for="id_location_name">Location (text)</label>
+    {{ form.location_name }}
+  </fieldset>
+
+  <div class="form-row">
+    <label for="id_images">Images (Please upload between 1 to 9 images)</label>
+    {{ form.images }}
+  </div>
+
+  <div class="form-row">
+    <label for="id_video_url">YouTube link (optional)</label>
+    {{ form.video_url }}
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn">Add Route</button>
+    <a href="{% url 'routes:list' %}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var map = L.map('map').setView([39.5, -98.35], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  var marker = null;
+  var latEl = document.getElementById('id_latitude');
+  var lngEl = document.getElementById('id_longitude');
+
+  function setLatLng(latlng){
+    if(!marker){
+      marker = L.marker(latlng, {draggable:true}).addTo(map);
+      marker.on('dragend', function(){
+        var pos = marker.getLatLng();
+        latEl.value = String(pos.lat);   // no decimal limit
+        lngEl.value = String(pos.lng);   // no decimal limit
+      });
+    } else {
+      marker.setLatLng(latlng);
+    }
+    latEl.value = String(latlng.lat);    // no decimal limit
+    lngEl.value = String(latlng.lng);    // no decimal limit
+  }
+
+  map.on('click', function(e){
+    setLatLng(e.latlng);
+  });
+
+  var lat = parseFloat(latEl.value);
+  var lng = parseFloat(lngEl.value);
+  if(!isNaN(lat) && !isNaN(lng)){
+    setLatLng({lat:lat, lng:lng});
+    map.setView([lat, lng], 12);
+  }
+
+  function clamp(v, min, max) {
+    return Math.min(max, Math.max(min, v));
+  }
+
+  latEl.addEventListener('change', function(){
+    var v = parseFloat(latEl.value);
+    if (!isNaN(v)) {
+      v = clamp(v, -90, 90);
+      latEl.value = String(v);  // keep user's precision
+      if (!isNaN(parseFloat(lngEl.value))) {
+        setLatLng({lat: parseFloat(latEl.value), lng: parseFloat(lngEl.value)});
+      }
+    }
+  });
+
+  lngEl.addEventListener('change', function(){
+    var v = parseFloat(lngEl.value);
+    if (!isNaN(v)) {
+      // keep user's precision; just clamp to valid range
+      if (v > 180) v = 180;
+      if (v < -180) v = -180;
+      lngEl.value = String(v);
+      if (!isNaN(parseFloat(latEl.value))) {
+        setLatLng({lat: parseFloat(latEl.value), lng: parseFloat(lngEl.value)});
+      }
+    }
+  });
+});
+</script>
+
+<style>
+.card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:1rem 1.25rem; }
+.alert { padding:.75rem 1rem; border-radius:8px; }
+.alert-error { background:#fff5f5; border:1px solid #fecaca; }
+.form-row { margin:.75rem 0; }
+.form-fieldset { margin:1rem 0; border:1px dashed #e5e7eb; padding:.75rem 1rem; border-radius:8px; }
+.row { display:flex; gap:.75rem; } .col { flex:1; }
+input[type="text"], input[type="url"], textarea, select, input[type="number"] { width:100%; max-width:100%; box-sizing:border-box; }
+#form-errors .errors { margin-top:.5rem; } #form-errors .error-item { margin:.25rem 0; }
+.btn, .btn.btn-secondary { color:#000!important; border:1px solid #000;}
+.btn, .btn.btn-secondary { background-color:transparent; }
+.form-actions { display: flex; gap: 0.75rem; }
+.form-actions .btn, .form-actions .btn.btn-secondary { height: 44px; min-height: 44px; }
+</style>
+{% endblock %}
