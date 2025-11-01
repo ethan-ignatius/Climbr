@@ -243,6 +243,11 @@ body.map-page .site-header {
   border-bottom: 1px solid rgba(229, 231, 235, 0.5);
 }
 
+body.map-page .nav {
+  min-height: 64px;
+  padding: 16px 0;
+}
+
 body.map-page .page {
   padding: 0;
 }
