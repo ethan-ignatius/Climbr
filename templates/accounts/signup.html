@@ -45,6 +45,29 @@
           {% endif %}
         </div>
 
+        <div class="field">
+          <label for="{{ form.location_name.id_for_label }}">Location</label>
+          <div class="location-input-group">
+            {{ form.location_name }}
+            <button type="button" id="detect-location" class="btn btn-outline">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+              Detect Location
+            </button>
+          </div>
+          <div class="field-help">We'll use this to show you nearby climbing routes</div>
+          {% if form.location_name.errors %}
+            <ul class="errorlist" role="alert">
+              {% for error in form.location_name.errors %}<li>{{ error }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+
+        {{ form.latitude }}
+        {{ form.longitude }}
+
         <p style="margin-top:14px;">
           <button class="btn" type="submit">Create account</button>
         </p>
@@ -54,4 +77,177 @@
       </div>
     </form>
   </div>
+
+<style>
+.location-input-group {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.location-input-group input {
+  flex: 1;
+}
+
+.location-input-group .btn {
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#detect-location:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.location-status {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.location-status.success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #d1fae5;
+}
+
+.location-status.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.location-status.info {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const detectLocationBtn = document.getElementById('detect-location');
+  const locationInput = document.getElementById('{{ form.location_name.id_for_label }}');
+  const latInput = document.getElementById('{{ form.latitude.id_for_label }}');
+  const longInput = document.getElementById('{{ form.longitude.id_for_label }}');
+  
+  function showLocationStatus(message, type = 'info') {
+    // Remove existing status
+    const existingStatus = document.querySelector('.location-status');
+    if (existingStatus) {
+      existingStatus.remove();
+    }
+    
+    // Add new status
+    const status = document.createElement('div');
+    status.className = `location-status ${type}`;
+    status.textContent = message;
+    detectLocationBtn.parentNode.parentNode.appendChild(status);
+    
+    // Auto-remove after 5 seconds for success/info messages
+    if (type !== 'error') {
+      setTimeout(() => {
+        if (status.parentNode) {
+          status.remove();
+        }
+      }, 5000);
+    }
+  }
+  
+  async function reverseGeocode(lat, lng) {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+      );
+      const data = await response.json();
+      
+      if (data && data.address) {
+        const city = data.address.city || data.address.town || data.address.village || '';
+        const state = data.address.state || '';
+        const country = data.address.country || '';
+        
+        let locationName = '';
+        if (city && state) {
+          locationName = `${city}, ${state}`;
+        } else if (city) {
+          locationName = city;
+        } else if (state) {
+          locationName = state;
+        } else if (country) {
+          locationName = country;
+        }
+        
+        return locationName || 'Unknown Location';
+      }
+    } catch (error) {
+      console.error('Reverse geocoding failed:', error);
+    }
+    return 'Unknown Location';
+  }
+  
+  detectLocationBtn.addEventListener('click', function() {
+    if (!navigator.geolocation) {
+      showLocationStatus('Geolocation is not supported by this browser.', 'error');
+      return;
+    }
+    
+    detectLocationBtn.disabled = true;
+    detectLocationBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6"></path><path d="M1 12h6m6 0h6"></path></svg>Detecting...';
+    
+    showLocationStatus('Getting your location...', 'info');
+    
+    navigator.geolocation.getCurrentPosition(
+      async function(position) {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        
+        // Set coordinates
+        latInput.value = lat;
+        longInput.value = lng;
+        
+        // Get location name
+        const locationName = await reverseGeocode(lat, lng);
+        locationInput.value = locationName;
+        
+        showLocationStatus(`Location detected: ${locationName}`, 'success');
+        
+        // Reset button
+        detectLocationBtn.disabled = false;
+        detectLocationBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Detect Location';
+      },
+      function(error) {
+        let errorMessage = 'Unable to detect location. ';
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage += 'Location access was denied.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage += 'Location information is unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMessage += 'Location request timed out.';
+            break;
+          default:
+            errorMessage += 'An unknown error occurred.';
+            break;
+        }
+        
+        showLocationStatus(errorMessage, 'error');
+        
+        // Reset button
+        detectLocationBtn.disabled = false;
+        detectLocationBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Detect Location';
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000 // 5 minutes
+      }
+    );
+  });
+});
+</script>
 {% endblock %}
