@@ -7,7 +7,7 @@
   <title>{% block title %}ClimbApp{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'base.css' %}">
 </head>
-<body>
+<body{% if request.resolver_match.url_name == 'home' %} class="map-page"{% endif %}>
   <header class="site-header">
     <div class="container nav">
 

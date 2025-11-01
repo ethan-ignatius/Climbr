@@ -225,3 +225,28 @@ input:focus, select:focus, textarea:focus {
   .lightbox img { width: 96vw; max-height: 78vh; }
   .lightbox .caption { max-height: 14vh; }
 }
+
+/* Map page specific styles */
+body.map-page {
+  background: #fff;
+  overflow: hidden;
+}
+
+body.map-page .site-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+}
+
+body.map-page .page {
+  padding: 0;
+}
+
+body.map-page .site-footer {
+  display: none;
+}
