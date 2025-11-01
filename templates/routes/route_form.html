@@ -68,9 +68,24 @@
 
   <fieldset class="form-fieldset">
     <legend>Location</legend>
-    <p>Select on the map <em>or</em> enter a location name. If you select on the map, latitude/longitude will be used.</p>
+    <p>Click on the map to set the route location, or search for a location, or use your current location.</p>
 
-    <div id="map" style="height: 300px; margin-bottom: 0.5rem;"></div>
+    <!-- Location controls -->
+    <div class="location-controls">
+      <div class="search-container">
+        <input type="text" id="location-search" placeholder="Search for location (e.g. Yosemite, Boulder, etc.)" />
+        <div id="search-results" class="search-results hidden"></div>
+      </div>
+      <button type="button" id="use-my-location" class="btn btn-location">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        Use My Location
+      </button>
+    </div>
+
+    <div id="map" style="height: 300px; margin: 0.5rem 0;"></div>
 
     <div class="row">
       <div class="col">
@@ -106,37 +121,160 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
+<!-- User location data from Django -->
+{{ user_location|json_script:"user-location-data" }}
+
 <script>
 document.addEventListener('DOMContentLoaded', function(){
-  var map = L.map('map').setView([39.5, -98.35], 4);
+  // Get user's saved location from Django
+  var userLocationElement = document.getElementById('user-location-data');
+  var savedUserLocation = userLocationElement ? JSON.parse(userLocationElement.textContent) : null;
+  
+  // Initialize map with user's saved location or default view
+  var initialView = [39.5, -98.35]; // Default: USA center
+  var initialZoom = 4;
+  
+  // If user has a saved location, use it as the initial view
+  if (savedUserLocation) {
+    initialView = [savedUserLocation.latitude, savedUserLocation.longitude];
+    initialZoom = 10;
+  }
+  
+  var map = L.map('map').setView(initialView, initialZoom);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
   var marker = null;
+  var userLocationMarker = null;
   var latEl = document.getElementById('id_latitude');
   var lngEl = document.getElementById('id_longitude');
+  var locationNameEl = document.getElementById('id_location_name');
+  var searchInput = document.getElementById('location-search');
+  var searchResults = document.getElementById('search-results');
+  var useLocationBtn = document.getElementById('use-my-location');
 
-  function setLatLng(latlng){
+  // Add saved user location marker if available
+  if (savedUserLocation) {
+    var savedLocationIcon = L.divIcon({
+      className: 'saved-location-marker',
+      html: `
+        <div class="saved-location-dot">
+          <div class="saved-location-center"></div>
+        </div>
+      `,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+    
+    var savedLocationMarker = L.marker([savedUserLocation.latitude, savedUserLocation.longitude], {
+      icon: savedLocationIcon,
+      zIndexOffset: 999
+    }).addTo(map);
+    
+    savedLocationMarker.bindTooltip('Your saved location', {
+      permanent: false,
+      direction: 'top',
+      offset: [0, -10]
+    });
+  }
+
+  // Try to get user's current location and show it
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(function(position) {
+      var userLat = position.coords.latitude;
+      var userLng = position.coords.longitude;
+      
+      // Only center map on current location if no saved location or if close to saved location
+      var shouldCenter = !savedUserLocation;
+      if (savedUserLocation) {
+        var distance = Math.sqrt(
+          Math.pow(savedUserLocation.latitude - userLat, 2) + 
+          Math.pow(savedUserLocation.longitude - userLng, 2)
+        );
+        // If more than ~0.01 degrees apart (~1km), don't auto-center
+        shouldCenter = distance < 0.01;
+      }
+      
+      if (shouldCenter) {
+        map.setView([userLat, userLng], 12);
+      }
+      
+      // Add current location marker (blue pulsing dot)
+      var userLocationIcon = L.divIcon({
+        className: 'user-location-marker',
+        html: `
+          <div class="user-location-dot">
+            <div class="user-location-pulse"></div>
+            <div class="user-location-center"></div>
+          </div>
+        `,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
+      
+      userLocationMarker = L.marker([userLat, userLng], {
+        icon: userLocationIcon,
+        zIndexOffset: 1000
+      }).addTo(map);
+      
+      userLocationMarker.bindTooltip('Your current location', {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -10]
+      });
+      
+      // Store user's coordinates for the "Use My Location" button
+      useLocationBtn.dataset.userLat = userLat;
+      useLocationBtn.dataset.userLng = userLng;
+      
+    }, function(error) {
+      console.log('Geolocation error:', error);
+      // If geolocation fails but we have saved location, use that for "Use My Location"
+      if (savedUserLocation) {
+        useLocationBtn.dataset.userLat = savedUserLocation.latitude;
+        useLocationBtn.dataset.userLng = savedUserLocation.longitude;
+      }
+    }, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 300000 // 5 minutes
+    });
+  } else if (savedUserLocation) {
+    // No geolocation support, but use saved location for "Use My Location"
+    useLocationBtn.dataset.userLat = savedUserLocation.latitude;
+    useLocationBtn.dataset.userLng = savedUserLocation.longitude;
+  }
+
+  function setLatLng(latlng, locationName = '') {
     if(!marker){
       marker = L.marker(latlng, {draggable:true}).addTo(map);
       marker.on('dragend', function(){
         var pos = marker.getLatLng();
-        latEl.value = String(pos.lat);   // no decimal limit
-        lngEl.value = String(pos.lng);   // no decimal limit
+        latEl.value = String(pos.lat);
+        lngEl.value = String(pos.lng);
+        // Clear location name when dragging
+        locationNameEl.value = '';
       });
     } else {
       marker.setLatLng(latlng);
     }
-    latEl.value = String(latlng.lat);    // no decimal limit
-    lngEl.value = String(latlng.lng);    // no decimal limit
+    latEl.value = String(latlng.lat);
+    lngEl.value = String(latlng.lng);
+    if (locationName) {
+      locationNameEl.value = locationName;
+    }
   }
 
+  // Map click handler
   map.on('click', function(e){
     setLatLng(e.latlng);
+    // Clear location name when clicking on map
+    locationNameEl.value = '';
   });
 
+  // Initialize marker if coordinates already exist
   var lat = parseFloat(latEl.value);
   var lng = parseFloat(lngEl.value);
   if(!isNaN(lat) && !isNaN(lng)){
@@ -144,6 +282,128 @@ document.addEventListener('DOMContentLoaded', function(){
     map.setView([lat, lng], 12);
   }
 
+  // Use My Location button handler
+  useLocationBtn.addEventListener('click', function() {
+    var userLat = parseFloat(this.dataset.userLat);
+    var userLng = parseFloat(this.dataset.userLng);
+    
+    if (!isNaN(userLat) && !isNaN(userLng)) {
+      setLatLng({lat: userLat, lng: userLng}, 'My Current Location');
+      map.setView([userLat, userLng], 14);
+    } else if (navigator.geolocation) {
+      // Try to get location again if not available
+      this.textContent = 'Getting location...';
+      this.disabled = true;
+      
+      navigator.geolocation.getCurrentPosition(function(position) {
+        var lat = position.coords.latitude;
+        var lng = position.coords.longitude;
+        setLatLng({lat: lat, lng: lng}, 'My Current Location');
+        map.setView([lat, lng], 14);
+        
+        useLocationBtn.textContent = 'Use My Location';
+        useLocationBtn.disabled = false;
+        useLocationBtn.dataset.userLat = lat;
+        useLocationBtn.dataset.userLng = lng;
+      }, function(error) {
+        alert('Could not get your location. Please ensure location services are enabled.');
+        useLocationBtn.textContent = 'Use My Location';
+        useLocationBtn.disabled = false;
+      });
+    } else {
+      alert('Geolocation is not supported by this browser.');
+    }
+  });
+
+  // Location search functionality
+  let searchTimeout;
+  let searchCache = new Map();
+
+  function performLocationSearch(query) {
+    if (searchCache.has(query)) {
+      showSearchResults(searchCache.get(query));
+      return;
+    }
+
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query)}&countrycodes=us&addressdetails=1`)
+      .then(response => response.json())
+      .then(results => {
+        searchCache.set(query, results);
+        showSearchResults(results);
+      })
+      .catch(error => {
+        console.error('Search error:', error);
+        hideSearchResults();
+      });
+  }
+
+  function showSearchResults(results) {
+    if (results.length === 0) {
+      hideSearchResults();
+      return;
+    }
+
+    searchResults.innerHTML = '';
+    results.forEach(result => {
+      var item = document.createElement('div');
+      item.className = 'search-result-item';
+      
+      var displayName = result.display_name.split(',').slice(0, 3).join(', ');
+      item.innerHTML = `
+        <div class="search-result-main">${displayName}</div>
+      `;
+      
+      item.addEventListener('click', function() {
+        var lat = parseFloat(result.lat);
+        var lng = parseFloat(result.lon);
+        setLatLng({lat: lat, lng: lng}, displayName);
+        map.setView([lat, lng], 12);
+        searchInput.value = displayName;
+        hideSearchResults();
+      });
+      
+      searchResults.appendChild(item);
+    });
+    
+    searchResults.classList.remove('hidden');
+  }
+
+  function hideSearchResults() {
+    searchResults.classList.add('hidden');
+  }
+
+  searchInput.addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    var query = this.value.trim();
+    
+    if (query.length < 3) {
+      hideSearchResults();
+      return;
+    }
+    
+    searchTimeout = setTimeout(() => {
+      performLocationSearch(query);
+    }, 300);
+  });
+
+  searchInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var query = this.value.trim();
+      if (query) {
+        performLocationSearch(query);
+      }
+    }
+  });
+
+  // Hide search results when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.search-container')) {
+      hideSearchResults();
+    }
+  });
+
+  // Form validation helpers
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
   }
@@ -152,9 +412,10 @@ document.addEventListener('DOMContentLoaded', function(){
     var v = parseFloat(latEl.value);
     if (!isNaN(v)) {
       v = clamp(v, -90, 90);
-      latEl.value = String(v);  // keep user's precision
+      latEl.value = String(v);
       if (!isNaN(parseFloat(lngEl.value))) {
         setLatLng({lat: parseFloat(latEl.value), lng: parseFloat(lngEl.value)});
+        map.setView([parseFloat(latEl.value), parseFloat(lngEl.value)], 12);
       }
     }
   });
@@ -162,12 +423,12 @@ document.addEventListener('DOMContentLoaded', function(){
   lngEl.addEventListener('change', function(){
     var v = parseFloat(lngEl.value);
     if (!isNaN(v)) {
-      // keep user's precision; just clamp to valid range
       if (v > 180) v = 180;
       if (v < -180) v = -180;
       lngEl.value = String(v);
       if (!isNaN(parseFloat(latEl.value))) {
         setLatLng({lat: parseFloat(latEl.value), lng: parseFloat(lngEl.value)});
+        map.setView([parseFloat(latEl.value), parseFloat(lngEl.value)], 12);
       }
     }
   });
@@ -187,5 +448,185 @@ input[type="text"], input[type="url"], textarea, select, input[type="number"] { 
 .btn, .btn.btn-secondary { background-color:transparent; }
 .form-actions { display: flex; gap: 0.75rem; }
 .form-actions .btn, .form-actions .btn.btn-secondary { height: 44px; min-height: 44px; }
+
+/* Location controls */
+.location-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  align-items: flex-start;
+}
+
+.search-container {
+  position: relative;
+  flex: 1;
+}
+
+.search-container input {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+}
+
+.search-container input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin-top: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.search-result-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.2s;
+}
+
+.search-result-item:hover {
+  background-color: #f8fafc;
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-main {
+  font-size: 14px;
+  color: #374151;
+}
+
+.btn-location {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 10px 16px;
+  background: #2563eb;
+  color: white !important;
+  border: 1px solid #2563eb !important;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-location:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8 !important;
+}
+
+.btn-location:disabled {
+  background: #9ca3af;
+  border-color: #9ca3af !important;
+  cursor: not-allowed;
+}
+
+.btn-location svg {
+  flex-shrink: 0;
+}
+
+/* User location marker styles */
+.user-location-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.user-location-dot {
+  position: relative;
+  width: 20px;
+  height: 20px;
+}
+
+.user-location-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: #1e40af;
+  border: 2px solid white;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.user-location-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  background: rgba(30, 64, 175, 0.3);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: pulse 2s infinite;
+}
+
+/* Saved location marker styles */
+.saved-location-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.saved-location-dot {
+  position: relative;
+  width: 16px;
+  height: 16px;
+}
+
+.saved-location-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background: #059669;
+  border: 2px solid white;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+  }
+}
+
+.hidden {
+  display: none;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .location-controls {
+    flex-direction: column;
+  }
+  
+  .btn-location {
+    align-self: flex-start;
+  }
+}
 </style>
 {% endblock %}

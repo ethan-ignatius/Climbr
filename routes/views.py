@@ -71,10 +71,23 @@ def route_create(request):
                 f.name = new_name  # ensures storage uses this filename
                 RouteImage.objects.create(route=route, image=f, order=idx)
 
-            messages.success(request, "Route added!")
+            messages.success(request, "Route added successfully!")
             return redirect("routes:detail", pk=route.pk)
         # fall through
     else:
         form = RouteForm(user=request.user)
 
-    return render(request, "routes/route_form.html", {"form": form})
+    # Get user's location from their profile if available
+    user_location = None
+    if hasattr(request.user, 'userprofile') and request.user.userprofile.latitude and request.user.userprofile.longitude:
+        user_location = {
+            'latitude': float(request.user.userprofile.latitude),
+            'longitude': float(request.user.userprofile.longitude)
+        }
+
+    context = {
+        "form": form,
+        "user_location": user_location
+    }
+    
+    return render(request, "routes/route_form.html", context)
