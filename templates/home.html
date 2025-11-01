@@ -376,9 +376,30 @@
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
 
+<!-- Django data injection using JSON script tags -->
+{{ user_location|json_script:"user-location-data" }}
+{{ routes|json_script:"routes-data" }}
+
 <script>
-// User location data from Django
-const userLocation = {% if user_location %}{{ user_location|safe }}{% else %}null{% endif %};
+// Parse Django data from JSON script tags
+const userLocationElement = document.getElementById('user-location-data');
+const userLocation = userLocationElement ? JSON.parse(userLocationElement.textContent) : null;
+
+const routesElement = document.getElementById('routes-data');
+const routesData = routesElement ? JSON.parse(routesElement.textContent) : [];
+
+// Process routes data for the map (data is already in the right format)
+const routes = routesData.map(route => ({
+  id: route.pk,
+  title: route.title,
+  description: route.description,
+  difficulty: route.difficulty,
+  author: route.author,
+  location: route.location_name,
+  lat: route.latitude,
+  lng: route.longitude,
+  detailUrl: `/routes/${route.pk}/`
+}));
 
 // Initialize the map
 let initialView = [39.7392, -104.9903]; // Default: Colorado
@@ -404,23 +425,6 @@ L.control.zoom({
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
 }).addTo(map);
-
-// Routes data from Django
-const routes = [
-  {% for route in routes %}
-  {
-    id: {{ route.pk }},
-    title: "{{ route.title|escapejs }}",
-    description: "{{ route.description|truncatechars:150|escapejs }}",
-    difficulty: {{ route.difficulty }},
-    author: "{{ route.author.username|escapejs }}",
-    location: "{{ route.location_name|escapejs }}",
-    lat: {{ route.latitude }},
-    lng: {{ route.longitude }},
-    detailUrl: "{% url 'routes:detail' route.pk %}"
-  }{% if not forloop.last %},{% endif %}
-  {% endfor %}
-];
 
 // Custom marker icon
 const createMarkerIcon = (difficulty) => {
@@ -526,211 +530,509 @@ const searchBtn = document.getElementById('search-btn');
 const searchResults = document.getElementById('search-results');
 
 let searchTimeout;
+const searchCache = new Map(); // Cache for search results
+let activeSearchController = null; // For cancelling requests
 
-// Popular climbing destinations for quick suggestions
-const popularClimbingAreas = [
-  { name: 'Yosemite Valley, CA', lat: 37.7749, lng: -119.4194 },
-  { name: 'Joshua Tree, CA', lat: 33.8734, lng: -116.4069 },
-  { name: 'Red River Gorge, KY', lat: 37.7779, lng: -83.6646 },
-  { name: 'Boulder, CO', lat: 40.0150, lng: -105.2705 },
-  { name: 'Moab, UT', lat: 38.5733, lng: -109.5498 },
-  { name: 'Eldorado Canyon, CO', lat: 39.9317, lng: -105.2927 },
-  { name: 'New River Gorge, WV', lat: 37.9773, lng: -81.0784 },
-  { name: 'Smith Rock, OR', lat: 44.3672, lng: -121.1403 }
+// Comprehensive local database for instant search results
+const localLocationDatabase = [
+  // Major US Cities
+  { name: 'Los Angeles, CA', lat: 34.0522, lng: -118.2437, aliases: ['la', 'los angeles'] },
+  { name: 'New York City, NY', lat: 40.7128, lng: -74.0060, aliases: ['nyc', 'new york', 'manhattan'] },
+  { name: 'San Francisco, CA', lat: 37.7749, lng: -122.4194, aliases: ['sf', 'san francisco'] },
+  { name: 'Chicago, IL', lat: 41.8781, lng: -87.6298, aliases: ['chi', 'chicago'] },
+  { name: 'Houston, TX', lat: 29.7604, lng: -95.3698, aliases: ['hou', 'houston'] },
+  { name: 'Phoenix, AZ', lat: 33.4484, lng: -112.0740, aliases: ['phx', 'phoenix'] },
+  { name: 'Philadelphia, PA', lat: 39.9526, lng: -75.1652, aliases: ['philly', 'philadelphia'] },
+  { name: 'San Antonio, TX', lat: 29.4241, lng: -98.4936, aliases: ['sa', 'san antonio'] },
+  { name: 'San Diego, CA', lat: 32.7157, lng: -117.1611, aliases: ['sd', 'san diego'] },
+  { name: 'Dallas, TX', lat: 32.7767, lng: -96.7970, aliases: ['dal', 'dallas'] },
+  { name: 'Austin, TX', lat: 30.2672, lng: -97.7431, aliases: ['aus', 'austin'] },
+  { name: 'Jacksonville, FL', lat: 30.3322, lng: -81.6557, aliases: ['jax', 'jacksonville'] },
+  { name: 'Fort Worth, TX', lat: 32.7555, lng: -97.3308, aliases: ['fort worth'] },
+  { name: 'Columbus, OH', lat: 39.9612, lng: -82.9988, aliases: ['columbus'] },
+  { name: 'Indianapolis, IN', lat: 39.7684, lng: -86.1581, aliases: ['indy', 'indianapolis'] },
+  { name: 'Charlotte, NC', lat: 35.2271, lng: -80.8431, aliases: ['charlotte'] },
+  { name: 'Seattle, WA', lat: 47.6062, lng: -121.3321, aliases: ['sea', 'seattle'] },
+  { name: 'Denver, CO', lat: 39.7392, lng: -104.9903, aliases: ['den', 'denver'] },
+  { name: 'Washington, DC', lat: 38.9072, lng: -77.0369, aliases: ['dc', 'washington'] },
+  { name: 'Boston, MA', lat: 42.3601, lng: -71.0589, aliases: ['boston'] },
+  { name: 'Nashville, TN', lat: 36.1627, lng: -86.7816, aliases: ['nash', 'nashville'] },
+  { name: 'Portland, OR', lat: 45.5152, lng: -122.6784, aliases: ['pdx', 'portland'] },
+  { name: 'Las Vegas, NV', lat: 36.1699, lng: -115.1398, aliases: ['vegas', 'las vegas'] },
+  { name: 'Detroit, MI', lat: 42.3314, lng: -83.0458, aliases: ['det', 'detroit'] },
+  { name: 'Memphis, TN', lat: 35.1495, lng: -90.0490, aliases: ['mem', 'memphis'] },
+  { name: 'Louisville, KY', lat: 38.2527, lng: -85.7585, aliases: ['louisville'] },
+  { name: 'Baltimore, MD', lat: 39.2904, lng: -76.6122, aliases: ['baltimore'] },
+  { name: 'Milwaukee, WI', lat: 43.0389, lng: -87.9065, aliases: ['milwaukee'] },
+  { name: 'Albuquerque, NM', lat: 35.0844, lng: -106.6504, aliases: ['albuquerque'] },
+  { name: 'Tucson, AZ', lat: 32.2226, lng: -110.9747, aliases: ['tucson'] },
+  { name: 'Fresno, CA', lat: 36.7378, lng: -119.7871, aliases: ['fresno'] },
+  { name: 'Sacramento, CA', lat: 38.5816, lng: -121.4944, aliases: ['sac', 'sacramento'] },
+  { name: 'Mesa, AZ', lat: 33.4152, lng: -111.8315, aliases: ['mesa'] },
+  { name: 'Kansas City, MO', lat: 39.0997, lng: -94.5786, aliases: ['kc', 'kansas city'] },
+  { name: 'Atlanta, GA', lat: 33.7490, lng: -84.3880, aliases: ['atl', 'atlanta'] },
+  { name: 'Colorado Springs, CO', lat: 38.8339, lng: -104.8214, aliases: ['colorado springs'] },
+  { name: 'Raleigh, NC', lat: 35.7796, lng: -78.6382, aliases: ['raleigh'] },
+  { name: 'Omaha, NE', lat: 41.2565, lng: -95.9345, aliases: ['omaha'] },
+  { name: 'Miami, FL', lat: 25.7617, lng: -80.1918, aliases: ['mia', 'miami'] },
+  { name: 'Oakland, CA', lat: 37.8044, lng: -122.2712, aliases: ['oak', 'oakland'] },
+  { name: 'Minneapolis, MN', lat: 44.9778, lng: -93.2650, aliases: ['minneapolis'] },
+  { name: 'Tulsa, OK', lat: 36.1540, lng: -95.9928, aliases: ['tulsa'] },
+  { name: 'Cleveland, OH', lat: 41.4993, lng: -81.6944, aliases: ['cleveland'] },
+  { name: 'Wichita, KS', lat: 37.6872, lng: -97.3301, aliases: ['wichita'] },
+  { name: 'Arlington, TX', lat: 32.7357, lng: -97.1081, aliases: ['arlington'] },
+  { name: 'New Orleans, LA', lat: 29.9511, lng: -90.0715, aliases: ['nola', 'new orleans'] },
+  { name: 'Bakersfield, CA', lat: 35.3733, lng: -119.0187, aliases: ['bakersfield'] },
+  { name: 'Tampa, FL', lat: 27.9506, lng: -82.4572, aliases: ['tampa'] },
+  { name: 'Honolulu, HI', lat: 21.3099, lng: -157.8581, aliases: ['honolulu'] },
+  { name: 'Aurora, CO', lat: 39.7294, lng: -104.8319, aliases: ['aurora'] },
+  { name: 'Anaheim, CA', lat: 33.8366, lng: -117.9143, aliases: ['anaheim'] },
+  { name: 'Santa Ana, CA', lat: 33.7455, lng: -117.8677, aliases: ['santa ana'] },
+  { name: 'St. Louis, MO', lat: 38.6270, lng: -90.1994, aliases: ['st louis', 'saint louis'] },
+  { name: 'Riverside, CA', lat: 33.9533, lng: -117.3962, aliases: ['riverside'] },
+  { name: 'Corpus Christi, TX', lat: 27.8006, lng: -97.3964, aliases: ['corpus christi'] },
+  { name: 'Lexington, KY', lat: 38.0406, lng: -84.5037, aliases: ['lexington'] },
+  { name: 'Pittsburgh, PA', lat: 40.4406, lng: -79.9959, aliases: ['pittsburgh'] },
+  { name: 'Anchorage, AK', lat: 61.2181, lng: -149.9003, aliases: ['anchorage'] },
+  { name: 'Stockton, CA', lat: 37.9577, lng: -121.2908, aliases: ['stockton'] },
+  { name: 'Cincinnati, OH', lat: 39.1031, lng: -84.5120, aliases: ['cincinnati'] },
+  { name: 'St. Paul, MN', lat: 44.9537, lng: -93.0900, aliases: ['st paul', 'saint paul'] },
+  { name: 'Toledo, OH', lat: 41.6528, lng: -83.5379, aliases: ['toledo'] },
+  { name: 'Greensboro, NC', lat: 36.0726, lng: -79.7920, aliases: ['greensboro'] },
+  { name: 'Newark, NJ', lat: 40.7357, lng: -74.1724, aliases: ['newark'] },
+  { name: 'Plano, TX', lat: 33.0198, lng: -96.6989, aliases: ['plano'] },
+  { name: 'Henderson, NV', lat: 36.0395, lng: -114.9817, aliases: ['henderson'] },
+  { name: 'Lincoln, NE', lat: 40.8136, lng: -96.7026, aliases: ['lincoln'] },
+  { name: 'Buffalo, NY', lat: 42.8864, lng: -78.8784, aliases: ['buffalo'] },
+  { name: 'Jersey City, NJ', lat: 40.7178, lng: -74.0431, aliases: ['jersey city'] },
+  { name: 'Chula Vista, CA', lat: 32.6401, lng: -117.0842, aliases: ['chula vista'] },
+  { name: 'Fort Wayne, IN', lat: 41.0793, lng: -85.1394, aliases: ['fort wayne'] },
+  { name: 'Orlando, FL', lat: 28.5383, lng: -81.3792, aliases: ['orlando'] },
+  { name: 'St. Petersburg, FL', lat: 27.7676, lng: -82.6403, aliases: ['st petersburg', 'saint petersburg'] },
+  { name: 'Chandler, AZ', lat: 33.3062, lng: -111.8413, aliases: ['chandler'] },
+  { name: 'Laredo, TX', lat: 27.5306, lng: -99.4803, aliases: ['laredo'] },
+  { name: 'Norfolk, VA', lat: 36.8468, lng: -76.2852, aliases: ['norfolk'] },
+  { name: 'Durham, NC', lat: 35.9940, lng: -78.8986, aliases: ['durham'] },
+  { name: 'Madison, WI', lat: 43.0731, lng: -89.4012, aliases: ['madison'] },
+  { name: 'Lubbock, TX', lat: 33.5779, lng: -101.8552, aliases: ['lubbock'] },
+  { name: 'Irvine, CA', lat: 33.6846, lng: -117.8265, aliases: ['irvine'] },
+  { name: 'Winston-Salem, NC', lat: 36.0999, lng: -80.2442, aliases: ['winston salem'] },
+  { name: 'Glendale, AZ', lat: 33.5387, lng: -112.1860, aliases: ['glendale'] },
+  { name: 'Garland, TX', lat: 32.9126, lng: -96.6389, aliases: ['garland'] },
+  { name: 'Hialeah, FL', lat: 25.8576, lng: -80.2781, aliases: ['hialeah'] },
+  { name: 'Reno, NV', lat: 39.5296, lng: -119.8138, aliases: ['reno'] },
+  { name: 'Chesapeake, VA', lat: 36.8190, lng: -76.2750, aliases: ['chesapeake'] },
+  { name: 'Gilbert, AZ', lat: 33.3528, lng: -111.7890, aliases: ['gilbert'] },
+  { name: 'Baton Rouge, LA', lat: 30.4515, lng: -91.1871, aliases: ['baton rouge'] },
+  { name: 'Irving, TX', lat: 32.8140, lng: -96.9489, aliases: ['irving'] },
+  { name: 'Scottsdale, AZ', lat: 33.4942, lng: -111.9261, aliases: ['scottsdale'] },
+  { name: 'North Las Vegas, NV', lat: 36.1989, lng: -115.1175, aliases: ['north las vegas'] },
+  { name: 'Fremont, CA', lat: 37.5485, lng: -121.9886, aliases: ['fremont'] },
+  { name: 'Boise, ID', lat: 43.6150, lng: -116.2023, aliases: ['boise'] },
+  { name: 'Richmond, VA', lat: 37.5407, lng: -77.4360, aliases: ['richmond'] },
+  { name: 'San Bernardino, CA', lat: 34.1083, lng: -117.2898, aliases: ['san bernardino'] },
+  { name: 'Birmingham, AL', lat: 33.5207, lng: -86.8025, aliases: ['birmingham'] },
+  { name: 'Spokane, WA', lat: 47.6587, lng: -117.4260, aliases: ['spokane'] },
+  { name: 'Rochester, NY', lat: 43.1566, lng: -77.6088, aliases: ['rochester'] },
+  { name: 'Des Moines, IA', lat: 41.5868, lng: -93.6250, aliases: ['des moines'] },
+  { name: 'Modesto, CA', lat: 37.6391, lng: -120.9969, aliases: ['modesto'] },
+  { name: 'Fayetteville, NC', lat: 35.0527, lng: -78.8784, aliases: ['fayetteville'] },
+  { name: 'Tacoma, WA', lat: 47.2529, lng: -122.4443, aliases: ['tacoma'] },
+  { name: 'Oxnard, CA', lat: 34.1975, lng: -119.1771, aliases: ['oxnard'] },
+  { name: 'Fontana, CA', lat: 34.0922, lng: -117.4350, aliases: ['fontana'] },
+  { name: 'Columbus, GA', lat: 32.4610, lng: -84.9877, aliases: ['columbus ga'] },
+  { name: 'Montgomery, AL', lat: 32.3668, lng: -86.3000, aliases: ['montgomery'] },
+  { name: 'Moreno Valley, CA', lat: 33.9425, lng: -117.2297, aliases: ['moreno valley'] },
+  { name: 'Shreveport, LA', lat: 32.5252, lng: -93.7502, aliases: ['shreveport'] },
+  { name: 'Aurora, IL', lat: 41.7606, lng: -88.3201, aliases: ['aurora il'] },
+  { name: 'Yonkers, NY', lat: 40.9312, lng: -73.8988, aliases: ['yonkers'] },
+  { name: 'Akron, OH', lat: 41.0814, lng: -81.5190, aliases: ['akron'] },
+  { name: 'Huntington Beach, CA', lat: 33.6603, lng: -117.9992, aliases: ['huntington beach'] },
+  { name: 'Little Rock, AR', lat: 34.7465, lng: -92.2896, aliases: ['little rock'] },
+  { name: 'Augusta, GA', lat: 33.4735, lng: -82.0105, aliases: ['augusta'] },
+  { name: 'Amarillo, TX', lat: 35.2220, lng: -101.8313, aliases: ['amarillo'] },
+  { name: 'Glendale, CA', lat: 34.1425, lng: -118.2551, aliases: ['glendale ca'] },
+  { name: 'Mobile, AL', lat: 30.6944, lng: -88.0431, aliases: ['mobile'] },
+  { name: 'Grand Rapids, MI', lat: 42.9634, lng: -85.6681, aliases: ['grand rapids'] },
+  { name: 'Salt Lake City, UT', lat: 40.7608, lng: -111.8910, aliases: ['slc', 'salt lake city'] },
+  { name: 'Tallahassee, FL', lat: 30.4518, lng: -84.2807, aliases: ['tallahassee'] },
+  { name: 'Huntsville, AL', lat: 34.7304, lng: -86.5861, aliases: ['huntsville'] },
+  { name: 'Grand Prairie, TX', lat: 32.7460, lng: -96.9978, aliases: ['grand prairie'] },
+  { name: 'Knoxville, TN', lat: 35.9606, lng: -83.9207, aliases: ['knoxville'] },
+  { name: 'Worcester, MA', lat: 42.2626, lng: -71.8023, aliases: ['worcester'] },
+  { name: 'Newport News, VA', lat: 37.0871, lng: -76.4730, aliases: ['newport news'] },
+  { name: 'Brownsville, TX', lat: 25.9018, lng: -97.4975, aliases: ['brownsville'] },
+  { name: 'Santa Clarita, CA', lat: 34.3917, lng: -118.5426, aliases: ['santa clarita'] },
+  { name: 'Providence, RI', lat: 41.8240, lng: -71.4128, aliases: ['providence'] },
+  { name: 'Fort Lauderdale, FL', lat: 26.1224, lng: -80.1373, aliases: ['fort lauderdale'] },
+  { name: 'Chattanooga, TN', lat: 35.0456, lng: -85.3097, aliases: ['chattanooga'] },
+  { name: 'Tempe, AZ', lat: 33.4255, lng: -111.9400, aliases: ['tempe'] },
+  { name: 'Oceanside, CA', lat: 33.1959, lng: -117.3795, aliases: ['oceanside'] },
+  { name: 'Garden Grove, CA', lat: 33.7739, lng: -117.9415, aliases: ['garden grove'] },
+  { name: 'Rancho Cucamonga, CA', lat: 34.1064, lng: -117.5931, aliases: ['rancho cucamonga'] },
+  { name: 'Santa Rosa, CA', lat: 38.4404, lng: -122.7141, aliases: ['santa rosa'] },
+  { name: 'Peoria, AZ', lat: 33.5806, lng: -112.2374, aliases: ['peoria'] },
+  { name: 'Fort Collins, CO', lat: 40.5853, lng: -105.0844, aliases: ['fort collins'] },
+  { name: 'Hayward, CA', lat: 37.6688, lng: -122.0808, aliases: ['hayward'] },
+  { name: 'Pomona, CA', lat: 34.0553, lng: -117.7500, aliases: ['pomona'] },
+  { name: 'Cary, NC', lat: 35.7915, lng: -78.7811, aliases: ['cary'] },
+  { name: 'Corona, CA', lat: 33.8753, lng: -117.5664, aliases: ['corona'] },
+  { name: 'Palmdale, CA', lat: 34.5794, lng: -118.1165, aliases: ['palmdale'] },
+  { name: 'Salinas, CA', lat: 36.6777, lng: -121.6555, aliases: ['salinas'] },
+  { name: 'Paterson, NJ', lat: 40.9168, lng: -74.1718, aliases: ['paterson'] },
+  { name: 'Overland Park, KS', lat: 38.9822, lng: -94.6708, aliases: ['overland park'] },
+  { name: 'Torrance, CA', lat: 33.8358, lng: -118.3406, aliases: ['torrance'] },
+  { name: 'Eugene, OR', lat: 44.0521, lng: -123.0868, aliases: ['eugene'] },
+  { name: 'Flint, MI', lat: 43.0125, lng: -83.6875, aliases: ['flint'] },
+  { name: 'Sioux Falls, SD', lat: 43.5446, lng: -96.7311, aliases: ['sioux falls'] },
+  { name: 'Springfield, MO', lat: 37.2090, lng: -93.2923, aliases: ['springfield mo'] },
+  { name: 'Peoria, IL', lat: 40.6936, lng: -89.5890, aliases: ['peoria il'] },
+  { name: 'Lancaster, CA', lat: 34.6868, lng: -118.1542, aliases: ['lancaster'] },
+  { name: 'Elk Grove, CA', lat: 38.4088, lng: -121.3716, aliases: ['elk grove'] },
+  { name: 'Corona, CA', lat: 33.8753, lng: -117.5664, aliases: ['corona ca'] },
+  { name: 'Thousand Oaks, CA', lat: 34.1706, lng: -118.8376, aliases: ['thousand oaks'] },
+  { name: 'Vallejo, CA', lat: 38.1041, lng: -122.2566, aliases: ['vallejo'] },
+  
+  // Popular Climbing Areas
+  { name: 'Yosemite Valley, CA', lat: 37.7749, lng: -119.4194, aliases: ['yosemite', 'yose'], isClimbing: true },
+  { name: 'Joshua Tree, CA', lat: 33.8734, lng: -116.4069, aliases: ['joshua tree', 'jtree', 'j tree'], isClimbing: true },
+  { name: 'Red River Gorge, KY', lat: 37.7779, lng: -83.6646, aliases: ['red river gorge', 'rrg'], isClimbing: true },
+  { name: 'Boulder, CO', lat: 40.0150, lng: -105.2705, aliases: ['boulder', 'flatirons'], isClimbing: true },
+  { name: 'Moab, UT', lat: 38.5733, lng: -109.5498, aliases: ['moab'], isClimbing: true },
+  { name: 'Eldorado Canyon, CO', lat: 39.9317, lng: -105.2927, aliases: ['eldorado', 'eldo'], isClimbing: true },
+  { name: 'New River Gorge, WV', lat: 37.9773, lng: -81.0784, aliases: ['new river gorge', 'nrg'], isClimbing: true },
+  { name: 'Smith Rock, OR', lat: 44.3672, lng: -121.1403, aliases: ['smith rock'], isClimbing: true },
+  { name: 'Devils Tower, WY', lat: 44.5902, lng: -104.7139, aliases: ['devils tower'], isClimbing: true },
+  { name: 'Red Rocks, NV', lat: 36.1353, lng: -115.4266, aliases: ['red rocks'], isClimbing: true },
+  { name: 'Index, WA', lat: 47.8205, lng: -121.5537, aliases: ['index'], isClimbing: true },
+  { name: 'Squamish, BC', lat: 49.7016, lng: -123.1558, aliases: ['squamish'], isClimbing: true },
+  { name: 'Shawangunks, NY', lat: 41.7326, lng: -74.2104, aliases: ['gunks', 'shawangunks', 'new paltz'], isClimbing: true },
+  { name: 'Seneca Rocks, WV', lat: 38.8348, lng: -79.3767, aliases: ['seneca', 'seneca rocks'], isClimbing: true },
+  { name: 'Bishop, CA', lat: 37.3614, lng: -118.3959, aliases: ['bishop'], isClimbing: true },
+  { name: 'Mammoth Lakes, CA', lat: 37.6485, lng: -118.9723, aliases: ['mammoth'], isClimbing: true },
+  { name: 'Tahoe, CA', lat: 39.0968, lng: -120.0324, aliases: ['tahoe', 'lake tahoe'], isClimbing: true },
+  { name: 'Tuolumne Meadows, CA', lat: 37.8747, lng: -119.3514, aliases: ['tuolumne'], isClimbing: true },
+  { name: 'Hueco Tanks, TX', lat: 31.9209, lng: -106.0476, aliases: ['hueco'], isClimbing: true },
+  { name: 'Ten Sleep, WY', lat: 44.0347, lng: -107.4481, aliases: ['ten sleep'], isClimbing: true },
+  { name: 'Lander, WY', lat: 42.8330, lng: -108.7307, aliases: ['lander'], isClimbing: true },
+  { name: 'Indian Creek, UT', lat: 38.4333, lng: -109.5167, aliases: ['indian creek'], isClimbing: true },
+  { name: 'Zion, UT', lat: 37.2982, lng: -113.0263, aliases: ['zion'], isClimbing: true },
+  { name: 'Black Canyon, CO', lat: 38.5753, lng: -107.7416, aliases: ['black canyon'], isClimbing: true },
+  { name: 'City of Rocks, ID', lat: 42.0667, lng: -113.7000, aliases: ['city of rocks'], isClimbing: true },
+  { name: 'Cochise Stronghold, AZ', lat: 31.9167, lng: -109.9667, aliases: ['cochise'], isClimbing: true },
+  { name: 'Mount Washington, NH', lat: 44.2706, lng: -71.3033, aliases: ['mount washington', 'north conway'], isClimbing: true },
+  { name: 'Rumney, NH', lat: 43.7834, lng: -71.8223, aliases: ['rumney'], isClimbing: true },
+  { name: 'Adirondacks, NY', lat: 43.8555, lng: -74.3565, aliases: ['adirondacks'], isClimbing: true },
+  { name: 'Acadia, ME', lat: 44.3386, lng: -68.2733, aliases: ['acadia'], isClimbing: true }
 ];
 
-// Show popular suggestions for short queries
-function showPopularSuggestions(query) {
-  const filteredAreas = popularClimbingAreas.filter(area => 
-    area.name.toLowerCase().includes(query.toLowerCase())
-  );
+// Create search index for faster lookups
+const searchIndex = new Map();
+localLocationDatabase.forEach((location, index) => {
+  // Index by name
+  const nameParts = location.name.toLowerCase().split(/[\s,]+/);
+  nameParts.forEach(part => {
+    if (part.length > 0) {
+      if (!searchIndex.has(part)) searchIndex.set(part, []);
+      searchIndex.get(part).push(index);
+    }
+  });
   
-  if (filteredAreas.length > 0) {
-    searchResults.innerHTML = '';
+  // Index by aliases
+  location.aliases.forEach(alias => {
+    const aliasParts = alias.toLowerCase().split(/[\s,]+/);
+    aliasParts.forEach(part => {
+      if (part.length > 0) {
+        if (!searchIndex.has(part)) searchIndex.set(part, []);
+        searchIndex.get(part).push(index);
+      }
+    });
+  });
+});
+
+// Fast local search function - instant results
+function performLocalSearch(query) {
+  if (!query || query.length === 0) {
+    hideSearchResults();
+    return;
+  }
+  
+  const queryLower = query.toLowerCase().trim();
+  const resultIndices = new Set();
+  
+  // Search through all query parts
+  const queryParts = queryLower.split(/[\s,]+/);
+  
+  queryParts.forEach(part => {
+    if (part.length > 0) {
+      // Exact matches first
+      if (searchIndex.has(part)) {
+        searchIndex.get(part).forEach(idx => resultIndices.add(idx));
+      }
+      
+      // Prefix matches
+      for (const [key, indices] of searchIndex.entries()) {
+        if (key.startsWith(part) && key !== part) {
+          indices.forEach(idx => resultIndices.add(idx));
+        }
+      }
+    }
+  });
+  
+  // Convert to array and get location objects
+  const results = Array.from(resultIndices)
+    .map(idx => localLocationDatabase[idx])
+    .filter(loc => loc) // Remove any undefined entries
+    .sort((a, b) => {
+      // Prioritize climbing areas for climbing-related queries
+      const queryIsClimbing = queryLower.includes('climb') || queryLower.includes('rock') || queryLower.includes('boulder');
+      
+      if (queryIsClimbing) {
+        if (a.isClimbing && !b.isClimbing) return -1;
+        if (!a.isClimbing && b.isClimbing) return 1;
+      }
+      
+      // Score by relevance
+      const aScore = calculateLocalRelevanceScore(a, queryLower);
+      const bScore = calculateLocalRelevanceScore(b, queryLower);
+      
+      return bScore - aScore;
+    })
+    .slice(0, 6); // Limit to 6 results
+  
+  if (results.length > 0) {
+    showLocalResults(results);
+  } else {
+    hideSearchResults();
+  }
+}
+
+// Calculate relevance score for local results
+function calculateLocalRelevanceScore(location, query) {
+  const name = location.name.toLowerCase();
+  let score = 0;
+  
+  // Exact name match
+  if (name === query) return 1000;
+  
+  // Starts with query
+  if (name.startsWith(query)) score += 500;
+  
+  // Contains query
+  if (name.includes(query)) score += 100;
+  
+  // Check aliases
+  for (const alias of location.aliases) {
+    const aliasLower = alias.toLowerCase();
+    if (aliasLower === query) score += 800;
+    if (aliasLower.startsWith(query)) score += 400;
+    if (aliasLower.includes(query)) score += 50;
+  }
+  
+  // Boost climbing areas
+  if (location.isClimbing) score += 25;
+  
+  // Boost popular cities (rough approximation by coordinate commonality)
+  const isPopular = location.name.includes('Los Angeles') || 
+                   location.name.includes('New York') || 
+                   location.name.includes('Chicago') || 
+                   location.name.includes('San Francisco') ||
+                   location.name.includes('Seattle') ||
+                   location.name.includes('Denver');
+  if (isPopular) score += 10;
+  
+  return score;
+}
+
+// Show local search results
+function showLocalResults(results) {
+  const fragment = document.createDocumentFragment();
+  
+  results.forEach(location => {
+    const item = document.createElement('div');
+    item.className = `search-result-item${location.isClimbing ? ' popular-suggestion' : ''}`;
     
-    filteredAreas.forEach(area => {
-      const item = document.createElement('div');
-      item.className = 'search-result-item popular-suggestion';
-      item.innerHTML = `
-        <div class="search-result-main">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline; margin-right: 6px; color: #f59e0b;">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-            <circle cx="12" cy="10" r="3"></circle>
-          </svg>
-          ${area.name}
-        </div>
-        <div class="search-result-subtitle">Popular climbing area</div>
-      `;
-      
-      item.addEventListener('click', () => {
-        searchInput.value = area.name;
-        hideSearchResults();
-        map.setView([area.lat, area.lng], 12);
-      });
-      
-      searchResults.appendChild(item);
+    const icon = location.isClimbing ? 
+      `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline; margin-right: 6px; color: #f59e0b;">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+        <circle cx="12" cy="10" r="3"></circle>
+      </svg>` : '';
+    
+    const subtitle = location.isClimbing ? 'Climbing area' : 'City';
+    
+    item.innerHTML = `
+      <div class="search-result-main">${icon}${location.name}</div>
+      <div class="search-result-subtitle">${subtitle}</div>
+    `;
+    
+    item.addEventListener('click', () => {
+      searchInput.value = location.name;
+      hideSearchResults();
+      map.setView([location.lat, location.lng], location.isClimbing ? 13 : 11);
     });
     
-    searchResults.classList.remove('hidden');
-    return true;
-  }
-  return false;
+    fragment.appendChild(item);
+  });
+  
+  searchResults.innerHTML = '';
+  searchResults.appendChild(fragment);
+  searchResults.classList.remove('hidden');
 }
 
-// Debounced search function
+// Instant local search with minimal debouncing
 function debounceSearch() {
   clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    const query = searchInput.value.trim();
-    if (query.length === 0) {
-      hideSearchResults();
-    } else if (query.length <= 2) {
-      // Show popular suggestions for short queries
-      if (!showPopularSuggestions(query)) {
-        hideSearchResults();
+  
+  // Cancel any ongoing API request
+  if (activeSearchController) {
+    activeSearchController.abort();
+    activeSearchController = null;
+  }
+  
+  const query = searchInput.value.trim();
+  
+  // Instant local search for any length query
+  if (query.length > 0) {
+    performLocalSearch(query);
+  } else {
+    hideSearchResults();
+  }
+  
+  // Only use API as fallback for longer queries with delay
+  if (query.length >= 4) {
+    searchTimeout = setTimeout(() => {
+      // Only call API if local search didn't find good results
+      const hasGoodLocalResults = !searchResults.classList.contains('hidden') && 
+                                 searchResults.children.length >= 3;
+      
+      if (!hasGoodLocalResults) {
+        performGeocodingSearch(query);
       }
-    } else {
-      performGeocodingSearch(query);
-    }
-  }, 300);
+    }, 500); // Longer delay since local search is instant
+  }
 }
 
-// City abbreviations and aliases mapping
-const cityAliases = {
-  'la': 'Los Angeles, CA',
-  'nyc': 'New York City, NY',
-  'sf': 'San Francisco, CA',
-  'dc': 'Washington, DC',
-  'chi': 'Chicago, IL',
-  'philly': 'Philadelphia, PA',
-  'vegas': 'Las Vegas, NV',
-  'nola': 'New Orleans, LA',
-  'atl': 'Atlanta, GA',
-  'pdx': 'Portland, OR',
-  'sac': 'Sacramento, CA',
-  'sd': 'San Diego, CA',
-  'mia': 'Miami, FL',
-  'det': 'Detroit, MI',
-  'sj': 'San Jose, CA',
-  'oak': 'Oakland, CA',
-  'sea': 'Seattle, WA',
-  'den': 'Denver, CO',
-  'phx': 'Phoenix, AZ',
-  'dal': 'Dallas, TX',
-  'hou': 'Houston, TX',
-  'sa': 'San Antonio, TX',
-  'aus': 'Austin, TX',
-  'indy': 'Indianapolis, IN',
-  'nash': 'Nashville, TN',
-  'mem': 'Memphis, TN',
-  'noc': 'North Conway, NH',
-  'reno': 'Reno, NV',
-  'tahoe': 'Lake Tahoe, CA',
-  'moab': 'Moab, UT',
-  'jtree': 'Joshua Tree, CA',
-  'yose': 'Yosemite, CA',
-  'rrg': 'Red River Gorge, KY',
-  'eldorado': 'Eldorado Canyon, CO',
-  'eldo': 'Eldorado Canyon, CO',
-  'flatirons': 'Boulder, CO',
-  'gunks': 'New Paltz, NY',
-  'seneca': 'Seneca Rocks, WV'
-};
-
-// Expand query with aliases and variations
+// Simple query expansion for API fallback
 function expandQuery(query) {
-  const lowerQuery = query.toLowerCase().trim();
-  
-  // Check for exact alias match
-  if (cityAliases[lowerQuery]) {
-    return cityAliases[lowerQuery];
-  }
-  
-  // Check for partial matches in aliases
-  for (const [alias, fullName] of Object.entries(cityAliases)) {
-    if (alias.includes(lowerQuery) || lowerQuery.includes(alias)) {
-      return fullName;
-    }
-  }
-  
+  // The local database handles aliases, so just return the query
   return query;
 }
 
-// Perform geocoding search using Nominatim (OpenStreetMap)
+// Optimized geocoding search with caching and single request
 async function performGeocodingSearch(query) {
+  // Check cache first
+  const cacheKey = query.toLowerCase().trim();
+  if (searchCache.has(cacheKey)) {
+    const cachedResults = searchCache.get(cacheKey);
+    showSearchResults(cachedResults);
+    return;
+  }
+  
   try {
+    // Cancel any previous request
+    if (activeSearchController) {
+      activeSearchController.abort();
+    }
+    
+    // Create new abort controller
+    activeSearchController = new AbortController();
+    
     const expandedQuery = expandQuery(query);
-    const searches = [];
     
-    // Primary search with expanded query
-    searches.push(
-      fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=3&q=${encodeURIComponent(expandedQuery)}&countrycodes=us&addressdetails=1`)
+    // Single optimized request instead of multiple parallel requests
+    const searchQuery = expandedQuery !== query ? expandedQuery : query;
+    
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=8&q=${encodeURIComponent(searchQuery)}&countrycodes=us&addressdetails=1&dedupe=1`,
+      { 
+        signal: activeSearchController.signal,
+        headers: {
+          'User-Agent': 'ClimbApp/1.0'
+        }
+      }
     );
     
-    // If original query was expanded, also search original
-    if (expandedQuery !== query) {
-      searches.push(
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=2&q=${encodeURIComponent(query)}&countrycodes=us&addressdetails=1`)
-      );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
     
-    // Add a more specific search for climbing areas
-    searches.push(
-      fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=2&q=${encodeURIComponent(query + ' climbing')}&countrycodes=us&addressdetails=1`)
-    );
+    const results = await response.json();
     
-    const responses = await Promise.all(searches);
-    const allResults = [];
-    
-    for (const response of responses) {
-      const results = await response.json();
-      allResults.push(...results);
-    }
-    
-    // Remove duplicates based on display_name
-    const uniqueResults = allResults.filter((result, index, self) => 
-      index === self.findIndex(r => r.display_name === result.display_name)
-    );
-    
-    // Sort by relevance (exact matches first, then by importance)
-    const sortedResults = uniqueResults.sort((a, b) => {
+    // Fast sorting by relevance
+    const sortedResults = results.sort((a, b) => {
       const aName = a.display_name.toLowerCase();
       const bName = b.display_name.toLowerCase();
       const queryLower = query.toLowerCase();
       
-      // Exact city name matches first
-      const aExact = aName.includes(queryLower);
-      const bExact = bName.includes(queryLower);
+      // Quick relevance scoring
+      const aScore = calculateRelevanceScore(aName, queryLower);
+      const bScore = calculateRelevanceScore(bName, queryLower);
       
-      if (aExact && !bExact) return -1;
-      if (!aExact && bExact) return 1;
+      if (aScore !== bScore) return bScore - aScore;
       
-      // Then by importance score
+      // Fallback to importance
       const aImportance = parseFloat(a.importance || 0);
       const bImportance = parseFloat(b.importance || 0);
       return bImportance - aImportance;
     });
     
-    if (sortedResults.length > 0) {
-      showSearchResults(sortedResults.slice(0, 5)); // Show top 5
-    } else {
-      hideSearchResults();
+    const finalResults = sortedResults.slice(0, 5);
+    
+    // Cache results for future use
+    searchCache.set(cacheKey, finalResults);
+    
+    // Clear cache if it gets too large (prevent memory leaks)
+    if (searchCache.size > 100) {
+      const firstKey = searchCache.keys().next().value;
+      searchCache.delete(firstKey);
     }
+    
+    showSearchResults(finalResults);
+    
   } catch (error) {
+    if (error.name === 'AbortError') {
+      // Request was cancelled, ignore
+      return;
+    }
     console.error('Geocoding error:', error);
     hideSearchResults();
+  } finally {
+    activeSearchController = null;
   }
 }
 
-// Show search results dropdown
+// Fast relevance scoring function
+function calculateRelevanceScore(text, query) {
+  if (text.startsWith(query)) return 100; // Perfect prefix match
+  if (text.includes(query)) return 50;     // Contains query
+  
+  // Check for word matches
+  const textWords = text.split(/[\s,]+/);
+  const queryWords = query.split(/\s+/);
+  
+  let wordMatches = 0;
+  for (const queryWord of queryWords) {
+    for (const textWord of textWords) {
+      if (textWord.startsWith(queryWord)) {
+        wordMatches += 10;
+        break;
+      }
+    }
+  }
+  
+  return wordMatches;
+}
+
+// Show search results dropdown - optimized for performance
 function showSearchResults(results) {
-  searchResults.innerHTML = '';
+  // Use DocumentFragment for faster DOM manipulation
+  const fragment = document.createDocumentFragment();
   
   results.forEach(result => {
     const item = document.createElement('div');
     item.className = 'search-result-item';
     
-    // Better formatting for different location types
+    // Optimized formatting - less complex logic
     let displayName, subtitle;
     
     if (result.address) {
@@ -759,13 +1061,18 @@ function showSearchResults(results) {
       ${subtitle ? `<div class="search-result-subtitle">${subtitle}</div>` : ''}
     `;
     
+    // Store data for faster access
+    item._resultData = { result, displayName };
     item.addEventListener('click', () => {
-      selectLocation(result, displayName);
+      selectLocation(item._resultData.result, item._resultData.displayName);
     });
     
-    searchResults.appendChild(item);
+    fragment.appendChild(item);
   });
   
+  // Single DOM update
+  searchResults.innerHTML = '';
+  searchResults.appendChild(fragment);
   searchResults.classList.remove('hidden');
 }
 
@@ -802,14 +1109,28 @@ function performSearch() {
   }
 }
 
-// Event listeners
-searchInput.addEventListener('input', debounceSearch);
+// Event listeners with instant local search
+searchInput.addEventListener('input', function(e) {
+  const query = e.target.value.trim();
+  
+  // Instant local search for any input
+  if (query.length > 0) {
+    performLocalSearch(query);
+  } else {
+    hideSearchResults();
+  }
+  
+  // Still run debounced search for API fallback
+  debounceSearch();
+});
+
 searchInput.addEventListener('keypress', function(e) {
   if (e.key === 'Enter') {
     e.preventDefault();
     performSearch();
   }
 });
+
 searchBtn.addEventListener('click', performSearch);
 
 // Hide results when clicking outside
