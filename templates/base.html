@@ -20,8 +20,9 @@
       <!-- Right group: right-aligned, items pack from the right edge -->
       <nav class="links links-right">
         <a href="{% url 'home' %}">Home</a>
-        <a href="{% url 'routes:list' %}">Routes</a>
+        <a href="{% url 'routes:list' %}">All Routes</a>
         {% if user.is_authenticated %}
+          <a href="{% url 'routes:my_routes' %}"> My Routes</a>
           <a href="{% url 'routes:add' %}">Add Route</a>
           <form action="{% url 'logout' %}" method="post" class="inline">
             {% csrf_token %}

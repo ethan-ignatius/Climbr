@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}My Routes – Climbr{% endblock %}
+
+{% block content %}
+<div class="my-routes-wrapper">
+  <div class="my-routes-header">
+    <h1>My Routes</h1>
+    <a href="{% url 'routes:add' %}" class="btn btn-primary">+ Add Route</a>
+  </div>
+
+  {% if routes %}
+    <div class="routes-grid">
+      {% for route in routes %}
+        <div class="route-card">
+          <div class="route-card-top">
+            <h3 class="route-title">{{ route.title }}</h3>
+            {% if route.difficulty %}<span class="pill">V{{ route.difficulty }}</span>{% endif %}
+          </div>
+
+          {% if route.location_name %}
+            <div class="route-loc">📍 {{ route.location_name }}</div>
+          {% endif %}
+
+          {% if route.description %}
+            <p class="route-desc">{{ route.description|truncatewords:30 }}</p>
+          {% endif %}
+
+          <div class="route-actions">
+            <a class="btn btn-primary" href="/routes/{{ route.pk }}/">View</a>
+            <!-- If you have a named URL, swap href to: {% url 'routes:edit' route.pk %} -->
+            <a class="btn btn-primary" href="/routes/{{ route.pk }}/edit/">Edit</a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">
+      <h3>No routes yet</h3>
+      <p>When you add routes, they’ll show up here.</p>
+      <a href="{% url 'routes:add' %}" class="btn btn-primary">Add your first route</a>
+    </div>
+  {% endif %}
+</div>
+
+<style>
+.my-routes-wrapper{
+  max-width:1100px;margin:0 auto;padding:32px 20px;
+}
+.my-routes-header{
+  display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;
+}
+.routes-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;
+}
+.route-card{
+  background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.08);
+  padding:16px;border:1px solid rgba(0,0,0,.06);
+}
+.route-card-top{
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;
+}
+.route-title{margin:0;font-size:18px}
+.pill{
+  display:inline-block;background:#f3f4f6;border-radius:999px;padding:4px 10px;
+  font-weight:600;font-size:12px;color:#111827;
+}
+.route-loc{color:#4b5563;font-size:13px;margin-bottom:8px}
+.route-desc{color:#374151;font-size:14px;margin:8px 0 12px}
+.route-actions{display:flex;gap:10px}
+
+/* Buttons (Add / View / Edit all use .btn-primary) */
+.btn{
+  display:inline-block;padding:8px 14px;border-radius:12px;text-decoration:none;
+  font-weight:700;border:1px solid transparent;line-height:1;
+  transition:transform .08s ease, box-shadow .2s ease, background .2s ease;
+}
+.btn-primary{
+  background:#2563eb;color:#fff;border-color:#2563eb;
+  box-shadow:0 6px 18px rgba(37,99,235,.25);
+}
+.btn-primary:hover{
+  background:#1d4ed8;box-shadow:0 8px 22px rgba(37,99,235,.35);text-decoration:none;color:#fff;
+}
+.btn-primary:active{transform:translateY(1px)}
+
+/* Empty state */
+.empty{
+  background:#fff;border-radius:16px;padding:32px;text-align:center;border:1px solid #eee
+}
+</style>
+{% endblock %}

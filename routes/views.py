@@ -9,6 +9,53 @@ import os
 import re
 import unicodedata
 
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import ListView
+from .models import Route
+
+class MyRoutesView(LoginRequiredMixin, ListView):
+    template_name = "routes/my_routes.html"
+    context_object_name = "routes"
+    login_url = "login"          # or set settings.LOGIN_URL
+    redirect_field_name = "next" # preserves return path after login
+
+    def get_queryset(self):
+        """
+        Returns all routes owned by the current user.
+        Adjust the field name below if your owner field is not `author`.
+        """
+        user = self.request.user
+        qs = Route.objects.all()
+
+        # Try common owner fields intelligently to avoid FieldErrors.
+        fields = {f.name: f for f in Route._meta.get_fields()}
+
+        # author (FK or CharField)
+        if "author" in fields:
+            f = fields["author"]
+            if getattr(f, "is_relation", False):
+                return qs.filter(author=user).order_by("-id")
+            else:
+                return qs.filter(author__iexact=user.get_username()).order_by("-id")
+
+        # owner (FK or CharField)
+        if "owner" in fields:
+            f = fields["owner"]
+            if getattr(f, "is_relation", False):
+                return qs.filter(owner=user).order_by("-id")
+            else:
+                return qs.filter(owner__iexact=user.get_username()).order_by("-id")
+
+        # created_by (FK or CharField)
+        if "created_by" in fields:
+            f = fields["created_by"]
+            if getattr(f, "is_relation", False):
+                return qs.filter(created_by=user).order_by("-id")
+            else:
+                return qs.filter(created_by__iexact=user.get_username()).order_by("-id")
+
+        # Fallback: nothing matched
+        return qs.none()
 
 def _slugify_simple(value: str, allow_unicode: bool = False) -> str:
     """

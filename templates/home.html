@@ -226,10 +226,24 @@
 }
 
 .route-marker {
-  background: #2563eb;
-  border: 3px solid white;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* The only visible pin */
+.route-marker .route-dot {
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.3);
 }
 
 .user-location-marker {
@@ -426,32 +440,100 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
 }).addTo(map);
 
-// Custom marker icon
 const createMarkerIcon = (difficulty) => {
-  const color = difficulty <= 3 ? '#10b981' : difficulty <= 6 ? '#f59e0b' : '#ef4444';
+  const color =
+    difficulty <= 3 ? '#10b981' :
+    difficulty <= 6 ? '#f59e0b' : '#ef4444';
+
   return L.divIcon({
-    className: 'route-marker',
-    html: `<div style="background: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">${difficulty}</div>`,
+    className: 'route-marker',                 // wrapper is now transparent
+    html: `<div class="route-dot" style="background:${color}">${difficulty}</div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12]
   });
 };
 
-// Add markers to map
-const markers = [];
-routes.forEach(route => {
-  const marker = L.marker([route.lat, route.lng], {
-    icon: createMarkerIcon(route.difficulty)
-  }).addTo(map);
-  
-  marker.routeData = route;
-  markers.push(marker);
-  
-  // Click handler for markers
-  marker.on('click', function() {
-    showRoutePopup(route);
+/* ---------------------------------------------------------------------------
+   Geocoding support for routes that only have location text (no lat/lng).
+   We use Nominatim and take the FIRST result. Results are cached in
+   localStorage and requests are rate-limited to be polite.
+--------------------------------------------------------------------------- */
+const GEOCACHE_KEY = 'climbr.geocodeCache.v1';
+const _geoCacheObj = JSON.parse(localStorage.getItem(GEOCACHE_KEY) || '{}');
+const geocodeCache = new Map(Object.entries(_geoCacheObj));
+
+function persistGeocodeCache() {
+  localStorage.setItem(GEOCACHE_KEY, JSON.stringify(Object.fromEntries(geocodeCache)));
+}
+
+let lastGeocodeAt = 0;
+async function rateLimitGeocode() {
+  const elapsed = Date.now() - lastGeocodeAt;
+  const wait = Math.max(0, 1100 - elapsed); // ~1 request/sec
+  if (wait) await new Promise(r => setTimeout(r, wait));
+  lastGeocodeAt = Date.now();
+}
+
+/** Returns {lat, lng} or null. Uses first Nominatim result. */
+async function geocodeFirstResult(query) {
+  if (!query) return null;
+  const key = query.trim().toLowerCase();
+  if (geocodeCache.has(key)) return geocodeCache.get(key);
+
+  await rateLimitGeocode();
+
+  const params = new URLSearchParams({
+    q: query,
+    format: 'jsonv2',
+    limit: '1',
+    addressdetails: '0',
+    // Add your contact email below; Nominatim requests one.
+    email: 'you@example.com'
   });
-});
+
+  const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+  try {
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`Geocode HTTP ${res.status}`);
+    const json = await res.json();
+    if (!json || !json.length) {
+      geocodeCache.set(key, null);
+      persistGeocodeCache();
+      return null;
+    }
+    const { lat, lon } = json[0];
+    const coords = { lat: parseFloat(lat), lng: parseFloat(lon) };
+    geocodeCache.set(key, coords);
+    persistGeocodeCache();
+    return coords;
+  } catch (err) {
+    console.error('Geocode error:', err);
+    return null;
+  }
+}
+
+/** Ensure a route has numeric {lat,lng}. If missing, geocode its location text. */
+async function ensureRouteCoords(route) {
+  const hasLat = Number.isFinite(route.lat);
+  const hasLng = Number.isFinite(route.lng);
+  if (hasLat && hasLng) return { lat: route.lat, lng: route.lng };
+
+  const q = route.location || route.location_name || route.place || route.address;
+  if (!q) return null;
+
+  const coords = await geocodeFirstResult(q);
+  if (coords) {
+    // Persist on the object so subsequent renders don't need to geocode again
+    route.lat = coords.lat;
+    route.lng = coords.lng;
+  }
+  return coords;
+}
+
+/* ---------------------------------------------------------------------------
+   Add markers (with geocoding fallback) and fit bounds
+--------------------------------------------------------------------------- */
+const routeLayer = L.layerGroup().addTo(map);
 
 // Add user location marker if available
 let userMarker = null;
@@ -468,12 +550,12 @@ if (userLocation) {
     iconSize: [20, 20],
     iconAnchor: [10, 10]
   });
-  
+
   userMarker = L.marker([userLocation.latitude, userLocation.longitude], {
     icon: userLocationIcon,
     zIndexOffset: 1000 // Keep user marker on top
   }).addTo(map);
-  
+
   // Add tooltip for user location
   userMarker.bindTooltip('Your location', {
     permanent: false,
@@ -482,25 +564,50 @@ if (userLocation) {
   });
 }
 
-// Fit map to show all markers if any exist, otherwise use user location or default
-if (routes.length > 0) {
-  const allMarkers = [...markers];
-  if (userMarker) {
-    allMarkers.push(userMarker);
+const markers = [];
+
+/** Renders markers for all routes, geocoding those that need it (first result). */
+async function renderRouteMarkersAndFit() {
+  routeLayer.clearLayers();
+  markers.length = 0;
+
+  for (const route of routes) {
+    const coords = await ensureRouteCoords(route);
+    if (!coords) continue;
+
+    const marker = L.marker([coords.lat, coords.lng], {
+      icon: createMarkerIcon(route.difficulty)
+    }).addTo(routeLayer);
+
+    marker.routeData = route;
+    marker.on('click', () => showRoutePopup(route));
+    markers.push(marker);
   }
-  const group = new L.featureGroup(allMarkers);
-  map.fitBounds(group.getBounds().pad(0.1));
-} else if (userLocation) {
-  // No routes, but user has location - already centered on user location
-} else {
-  // No routes, no user location - use default view (already set)
+
+  // Fit map to show all markers if any exist, otherwise use user location or default
+  if (markers.length > 0 || userMarker) {
+    const all = [...markers];
+    if (userMarker) all.push(userMarker);
+    const group = new L.featureGroup(all);
+    try {
+      map.fitBounds(group.getBounds().pad(0.1));
+    } catch (e) {
+      // If bounds are invalid for some reason, ignore and keep current view
+      console.warn('fitBounds warning:', e);
+    }
+  }
 }
 
-// Show route popup
+// Kick off rendering
+renderRouteMarkersAndFit();
+
+/* ---------------------------------------------------------------------------
+   Route popup
+--------------------------------------------------------------------------- */
 function showRoutePopup(route) {
   const popup = document.getElementById('route-popup');
   const popupBody = document.getElementById('popup-body');
-  
+
   popupBody.innerHTML = `
     <div class="route-info">
       <div class="route-title">${route.title}</div>
@@ -515,7 +622,7 @@ function showRoutePopup(route) {
       </div>
     </div>
   `;
-  
+
   popup.classList.remove('hidden');
 }
 
@@ -524,7 +631,9 @@ document.getElementById('close-popup').addEventListener('click', function() {
   document.getElementById('route-popup').classList.add('hidden');
 });
 
-// Search functionality with geocoding
+/* ---------------------------------------------------------------------------
+   Search functionality with geocoding (unchanged other than being below)
+--------------------------------------------------------------------------- */
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
 const searchResults = document.getElementById('search-results');
@@ -737,7 +846,7 @@ localLocationDatabase.forEach((location, index) => {
       searchIndex.get(part).push(index);
     }
   });
-  
+
   // Index by aliases
   location.aliases.forEach(alias => {
     const aliasParts = alias.toLowerCase().split(/[\s,]+/);
@@ -756,20 +865,20 @@ function performLocalSearch(query) {
     hideSearchResults();
     return;
   }
-  
+
   const queryLower = query.toLowerCase().trim();
   const resultIndices = new Set();
-  
+
   // Search through all query parts
   const queryParts = queryLower.split(/[\s,]+/);
-  
+
   queryParts.forEach(part => {
     if (part.length > 0) {
       // Exact matches first
       if (searchIndex.has(part)) {
         searchIndex.get(part).forEach(idx => resultIndices.add(idx));
       }
-      
+
       // Prefix matches
       for (const [key, indices] of searchIndex.entries()) {
         if (key.startsWith(part) && key !== part) {
@@ -778,7 +887,7 @@ function performLocalSearch(query) {
       }
     }
   });
-  
+
   // Convert to array and get location objects
   const results = Array.from(resultIndices)
     .map(idx => localLocationDatabase[idx])
@@ -786,20 +895,20 @@ function performLocalSearch(query) {
     .sort((a, b) => {
       // Prioritize climbing areas for climbing-related queries
       const queryIsClimbing = queryLower.includes('climb') || queryLower.includes('rock') || queryLower.includes('boulder');
-      
+
       if (queryIsClimbing) {
         if (a.isClimbing && !b.isClimbing) return -1;
         if (!a.isClimbing && b.isClimbing) return 1;
       }
-      
+
       // Score by relevance
       const aScore = calculateLocalRelevanceScore(a, queryLower);
       const bScore = calculateLocalRelevanceScore(b, queryLower);
-      
+
       return bScore - aScore;
     })
     .slice(0, 6); // Limit to 6 results
-  
+
   if (results.length > 0) {
     showLocalResults(results);
   } else {
@@ -811,16 +920,16 @@ function performLocalSearch(query) {
 function calculateLocalRelevanceScore(location, query) {
   const name = location.name.toLowerCase();
   let score = 0;
-  
+
   // Exact name match
   if (name === query) return 1000;
-  
+
   // Starts with query
   if (name.startsWith(query)) score += 500;
-  
+
   // Contains query
   if (name.includes(query)) score += 100;
-  
+
   // Check aliases
   for (const alias of location.aliases) {
     const aliasLower = alias.toLowerCase();
@@ -828,10 +937,10 @@ function calculateLocalRelevanceScore(location, query) {
     if (aliasLower.startsWith(query)) score += 400;
     if (aliasLower.includes(query)) score += 50;
   }
-  
+
   // Boost climbing areas
   if (location.isClimbing) score += 25;
-  
+
   // Boost popular cities (rough approximation by coordinate commonality)
   const isPopular = location.name.includes('Los Angeles') || 
                    location.name.includes('New York') || 
@@ -840,40 +949,40 @@ function calculateLocalRelevanceScore(location, query) {
                    location.name.includes('Seattle') ||
                    location.name.includes('Denver');
   if (isPopular) score += 10;
-  
+
   return score;
 }
 
 // Show local search results
 function showLocalResults(results) {
   const fragment = document.createDocumentFragment();
-  
+
   results.forEach(location => {
     const item = document.createElement('div');
     item.className = `search-result-item${location.isClimbing ? ' popular-suggestion' : ''}`;
-    
+
     const icon = location.isClimbing ? 
       `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline; margin-right: 6px; color: #f59e0b;">
         <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
         <circle cx="12" cy="10" r="3"></circle>
       </svg>` : '';
-    
+
     const subtitle = location.isClimbing ? 'Climbing area' : 'City';
-    
+
     item.innerHTML = `
       <div class="search-result-main">${icon}${location.name}</div>
       <div class="search-result-subtitle">${subtitle}</div>
     `;
-    
+
     item.addEventListener('click', () => {
       searchInput.value = location.name;
       hideSearchResults();
       map.setView([location.lat, location.lng], location.isClimbing ? 13 : 11);
     });
-    
+
     fragment.appendChild(item);
   });
-  
+
   searchResults.innerHTML = '';
   searchResults.appendChild(fragment);
   searchResults.classList.remove('hidden');
@@ -882,29 +991,29 @@ function showLocalResults(results) {
 // Instant local search with minimal debouncing
 function debounceSearch() {
   clearTimeout(searchTimeout);
-  
+
   // Cancel any ongoing API request
   if (activeSearchController) {
     activeSearchController.abort();
     activeSearchController = null;
   }
-  
+
   const query = searchInput.value.trim();
-  
+
   // Instant local search for any length query
   if (query.length > 0) {
     performLocalSearch(query);
   } else {
     hideSearchResults();
   }
-  
+
   // Only use API as fallback for longer queries with delay
   if (query.length >= 4) {
     searchTimeout = setTimeout(() => {
       // Only call API if local search didn't find good results
       const hasGoodLocalResults = !searchResults.classList.contains('hidden') && 
                                  searchResults.children.length >= 3;
-      
+
       if (!hasGoodLocalResults) {
         performGeocodingSearch(query);
       }
@@ -927,21 +1036,21 @@ async function performGeocodingSearch(query) {
     showSearchResults(cachedResults);
     return;
   }
-  
+
   try {
     // Cancel any previous request
     if (activeSearchController) {
       activeSearchController.abort();
     }
-    
+
     // Create new abort controller
     activeSearchController = new AbortController();
-    
+
     const expandedQuery = expandQuery(query);
-    
+
     // Single optimized request instead of multiple parallel requests
     const searchQuery = expandedQuery !== query ? expandedQuery : query;
-    
+
     const response = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&limit=8&q=${encodeURIComponent(searchQuery)}&countrycodes=us&addressdetails=1&dedupe=1`,
       { 
@@ -951,44 +1060,44 @@ async function performGeocodingSearch(query) {
         }
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const results = await response.json();
-    
+
     // Fast sorting by relevance
     const sortedResults = results.sort((a, b) => {
       const aName = a.display_name.toLowerCase();
       const bName = b.display_name.toLowerCase();
       const queryLower = query.toLowerCase();
-      
+
       // Quick relevance scoring
       const aScore = calculateRelevanceScore(aName, queryLower);
       const bScore = calculateRelevanceScore(bName, queryLower);
-      
+
       if (aScore !== bScore) return bScore - aScore;
-      
+
       // Fallback to importance
       const aImportance = parseFloat(a.importance || 0);
       const bImportance = parseFloat(b.importance || 0);
       return bImportance - aImportance;
     });
-    
+
     const finalResults = sortedResults.slice(0, 5);
-    
+
     // Cache results for future use
     searchCache.set(cacheKey, finalResults);
-    
+
     // Clear cache if it gets too large (prevent memory leaks)
     if (searchCache.size > 100) {
       const firstKey = searchCache.keys().next().value;
       searchCache.delete(firstKey);
     }
-    
+
     showSearchResults(finalResults);
-    
+
   } catch (error) {
     if (error.name === 'AbortError') {
       // Request was cancelled, ignore
@@ -1005,11 +1114,11 @@ async function performGeocodingSearch(query) {
 function calculateRelevanceScore(text, query) {
   if (text.startsWith(query)) return 100; // Perfect prefix match
   if (text.includes(query)) return 50;     // Contains query
-  
+
   // Check for word matches
   const textWords = text.split(/[\s,]+/);
   const queryWords = query.split(/\s+/);
-  
+
   let wordMatches = 0;
   for (const queryWord of queryWords) {
     for (const textWord of textWords) {
@@ -1019,7 +1128,7 @@ function calculateRelevanceScore(text, query) {
       }
     }
   }
-  
+
   return wordMatches;
 }
 
@@ -1027,20 +1136,20 @@ function calculateRelevanceScore(text, query) {
 function showSearchResults(results) {
   // Use DocumentFragment for faster DOM manipulation
   const fragment = document.createDocumentFragment();
-  
+
   results.forEach(result => {
     const item = document.createElement('div');
     item.className = 'search-result-item';
-    
+
     // Optimized formatting - less complex logic
     let displayName, subtitle;
-    
+
     if (result.address) {
       const addr = result.address;
       const city = addr.city || addr.town || addr.village;
       const state = addr.state;
       const county = addr.county;
-      
+
       if (city && state) {
         displayName = `${city}, ${state}`;
         if (county && county !== city) {
@@ -1054,22 +1163,22 @@ function showSearchResults(results) {
     } else {
       displayName = result.display_name.split(',').slice(0, 3).join(', ');
     }
-    
+
     // Create the item HTML
     item.innerHTML = `
       <div class="search-result-main">${displayName}</div>
       ${subtitle ? `<div class="search-result-subtitle">${subtitle}</div>` : ''}
     `;
-    
+
     // Store data for faster access
     item._resultData = { result, displayName };
     item.addEventListener('click', () => {
       selectLocation(item._resultData.result, item._resultData.displayName);
     });
-    
+
     fragment.appendChild(item);
   });
-  
+
   // Single DOM update
   searchResults.innerHTML = '';
   searchResults.appendChild(fragment);
@@ -1085,14 +1194,14 @@ function hideSearchResults() {
 function selectLocation(result, displayName) {
   const lat = parseFloat(result.lat);
   const lng = parseFloat(result.lon);
-  
+
   // Update search input
   searchInput.value = displayName;
   hideSearchResults();
-  
+
   // Center map on selected location
   map.setView([lat, lng], 12);
-  
+
   // Store in localStorage
   localStorage.setItem('climbr-last-search', JSON.stringify({
     name: displayName,
@@ -1112,14 +1221,14 @@ function performSearch() {
 // Event listeners with instant local search
 searchInput.addEventListener('input', function(e) {
   const query = e.target.value.trim();
-  
+
   // Instant local search for any input
   if (query.length > 0) {
     performLocalSearch(query);
   } else {
     hideSearchResults();
   }
-  
+
   // Still run debounced search for API fallback
   debounceSearch();
 });
