@@ -28,9 +28,16 @@ class MultiFileField(forms.FileField):
 
 class RouteForm(forms.ModelForm):
     # Inject request.user via __init__ so we can check per-user uniqueness
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args, user=None, is_edit=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
+        self.is_edit = is_edit
+        
+        # Make images optional when editing
+        if is_edit:
+            self.fields['images'].required = False
+        else:
+            self.fields['images'].required = True
 
     # Title (clean in clean_title to avoid duplicates & trim)
     title = forms.CharField(
@@ -131,12 +138,16 @@ class RouteForm(forms.ModelForm):
         if has_name and has_coords:
             cleaned["location_name"] = ""  # prefer coords if both provided
 
-        # Enforce 1..9 images
+       # Enforce 1..9 images (but only for new routes, not edits)
         files = self.cleaned_data.get("images") or []
-        if len(files) == 0:
-            self.add_error("images", "Please upload between 1 to 9 images.")
-        elif len(files) > 9:
-            self.add_error("images", "Too many images selected. Please select at most 9.")
+        if not self.is_edit:  # Only require images for new routes
+            if len(files) == 0:
+                self.add_error("images", "Please upload between 1 to 9 images.")
+            elif len(files) > 9:
+                self.add_error("images", "Too many images selected. Please select at most 9.")
+        else:  # For edits, only validate count if images are provided
+            if len(files) > 9:
+                self.add_error("images", "Too many images selected. Please select at most 9.")
 
         return cleaned
 
