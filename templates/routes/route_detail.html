@@ -1,13 +1,19 @@
 {% extends "base.html" %}
 {% block title %}{{ route.title }}{% endblock %}
 {% block content %}
-  <div class="card">
-    <!-- Row 1: title · by user · time -->
-    <div class="row" style="justify-content: space-between; align-items: baseline;">
-      <h1 style="margin:0;">{{ route.title }}</h1>
-      <small class="muted">by {{ route.author.username }} · {{ route.created_at|date:"Y-m-d H:i" }}</small>
+<div class="card">
+    <!-- Row 1: title · by user · time + edit button if author -->
+    <div class="row-with-actions" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+      <div style="flex: 1;">
+        <h1 style="margin:0;">{{ route.title }}</h1>
+        <small class="muted">by {{ route.author.username }} · {{ route.created_at|date:"Y-m-d H:i" }}</small>
+      </div>
+      {% if user.is_authenticated and user == route.author %}
+        <div class="route-actions" style="display: flex; gap: 8px;">
+          <a href="{% url 'routes:edit' route.pk %}" class="btn-small">Edit</a>
+        </div>
+      {% endif %}
     </div>
-
     <!-- Row 2: difficulty -->
     <div style="margin-top:6px;">
       <span class="badge">Difficulty: {{ route.difficulty }}</span>
@@ -110,5 +116,41 @@
       lb.addEventListener('click', function(e) { if (e.target === lb) closeLightbox(); });
       document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeLightbox(); });
     })();
+    
   </script>
+  <style>
+    .btn-small {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 8px;
+      border: 1px solid #2563eb;
+      background: #2563eb;
+      color: white !important;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-small:hover {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+
+    .btn-small.btn-danger {
+      border-color: #dc2626;
+      background: #dc2626;
+    }
+
+    .btn-small.btn-danger:hover {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
+
+    .route-actions {
+      flex-shrink: 0;
+    }
+  </style>
 {% endblock %}

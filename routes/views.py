@@ -52,7 +52,7 @@ def route_detail(request, pk: int):
 @login_required
 def route_create(request):
     if request.method == "POST":
-        form = RouteForm(request.POST, request.FILES, user=request.user)
+        form = RouteForm(user=request.user, is_edit=False)  # Add is_edit=False
         if form.is_valid():
             files = form.cleaned_data.get("images") or []
 
@@ -88,6 +88,66 @@ def route_create(request):
     context = {
         "form": form,
         "user_location": user_location
+    }
+    
+    return render(request, "routes/route_form.html", context)
+
+@login_required
+def route_edit(request, pk: int):
+    """Edit an existing route (only by author)"""
+    route = get_object_or_404(
+        Route.objects.select_related("author").prefetch_related("images"),
+        pk=pk
+    )
+    
+    # Check if user is the author
+    if route.author != request.user:
+        messages.error(request, "You can only edit routes you created.")
+        return redirect("routes:detail", pk=route.pk)
+    
+    if request.method == "POST":
+        form = RouteForm(request.POST, request.FILES, instance=route, user=request.user, is_edit=True)  # Add is_edit=True
+
+        if form.is_valid():
+            # Get new images (if any)
+            files = form.cleaned_data.get("images") or []
+            
+            # Save route updates
+            route = form.save(commit=True)
+            
+            # Handle new images
+            if files:
+                # Delete old images and replace with new ones
+                route.images.all().delete()
+                
+                user_slug = _slugify_simple(request.user.username or "user")
+                title_slug = _slugify_simple(route.title or "route")
+                
+                for idx, f in enumerate(files, start=1):
+                    ext = _normalized_ext(getattr(f, "name", "") or "")
+                    new_name = f"{user_slug}_{title_slug}_{idx}{ext}"
+                    f.name = new_name
+                    RouteImage.objects.create(route=route, image=f, order=idx)
+            
+            messages.success(request, "Route updated successfully!")
+            return redirect("routes:detail", pk=route.pk)
+        # fall through to show form with errors
+    else:
+        form = RouteForm(instance=route, user=request.user, is_edit=True)  # Add is_edit=True
+
+    # Get user's location from their profile if available
+    user_location = None
+    if hasattr(request.user, 'profile') and request.user.profile.latitude and request.user.profile.longitude:
+        user_location = {
+            'latitude': float(request.user.profile.latitude),
+            'longitude': float(request.user.profile.longitude)
+        }
+    
+    context = {
+        "form": form,
+        "user_location": user_location,
+        "route": route,
+        "is_edit": True
     }
     
     return render(request, "routes/route_form.html", context)
