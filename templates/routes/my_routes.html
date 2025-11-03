@@ -29,6 +29,10 @@
             <a class="btn btn-primary" href="/routes/{{ route.pk }}/">View</a>
             <!-- If you have a named URL, swap href to: {% url 'routes:edit' route.pk %} -->
             <a class="btn btn-primary" href="/routes/{{ route.pk }}/edit/">Edit</a>
+            <form action="{% url 'routes:delete' route.pk %}" method="POST" style="display:inline;">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary btn-danger">Delete</button>
+            </form>
           </div>
         </div>
       {% endfor %}

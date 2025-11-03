@@ -99,11 +99,13 @@ def route_detail(request, pk: int):
 @login_required
 def route_create(request):
     if request.method == "POST":
-        form = RouteForm(user=request.user, is_edit=False)  # Add is_edit=False
+        # Include POST data and files
+        form = RouteForm(request.POST, request.FILES, user=request.user, is_edit=False)
+
         if form.is_valid():
             files = form.cleaned_data.get("images") or []
 
-            # Save route first (need author/title to name files)
+            # Save route instance
             route = form.save(commit=False)
             route.author = request.user
             route.save()
@@ -113,31 +115,41 @@ def route_create(request):
 
             for idx, f in enumerate(files, start=1):
                 ext = _normalized_ext(getattr(f, "name", "") or "")
-                # NOTE: plain index (no zero padding)
                 new_name = f"{user_slug}_{title_slug}_{idx}{ext}"
-                f.name = new_name  # ensures storage uses this filename
+                f.name = new_name
                 RouteImage.objects.create(route=route, image=f, order=idx)
 
             messages.success(request, "Route added successfully!")
             return redirect("routes:detail", pk=route.pk)
-        # fall through
+        # fall through to show form with errors
     else:
         form = RouteForm(user=request.user)
 
-    # Get user's location from their profile if available
-    user_location = None
-    if hasattr(request.user, 'userprofile') and request.user.userprofile.latitude and request.user.userprofile.longitude:
-        user_location = {
-            'latitude': float(request.user.userprofile.latitude),
-            'longitude': float(request.user.userprofile.longitude)
-        }
-
-    context = {
-        "form": form,
-        "user_location": user_location
-    }
-    
+    context = {"form": form}
     return render(request, "routes/route_form.html", context)
+
+
+@login_required
+def route_delete(request, pk: int):
+    """Deletes an existing route (only by author)"""
+    route = get_object_or_404(
+        Route.objects.select_related("author").prefetch_related("images"),
+        pk=pk
+    )
+
+    # Checks if user is the author
+    if route.author != request.user:
+        messages.error(request, "You can only delete routes you created.")
+        return redirect("routes:detail", pk=route.pk)
+    
+    if request.method == "POST":
+        route.delete()
+        messages.success(request, "Route deleted sucessfully.")
+        return redirect("routes:my_routes")
+    
+    return redirect("routes:detail", pk=route.pk)
+
+
 
 @login_required
 def route_edit(request, pk: int):
