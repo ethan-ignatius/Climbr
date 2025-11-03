@@ -10,6 +10,10 @@
       </div>
       {% if user.is_authenticated and user == route.author %}
         <div class="route-actions" style="display: flex; gap: 8px;">
+          <form action="{% url 'routes:delete' route.pk %}" method="POST" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn-small btn-danger">Delete</button>
+          </form>
           <a href="{% url 'routes:edit' route.pk %}" class="btn-small">Edit</a>
         </div>
       {% endif %}

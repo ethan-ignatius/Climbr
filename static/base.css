@@ -79,6 +79,10 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--brand-blue); background: var(--brand-blue);
   color: #fff !important; font-weight: 600; text-decoration: none; cursor: pointer;
 }
+.btn.btn-danger {
+  background-color: #dc3545 !important;
+  border-color: #dc3545 !important;
+}
 .btn:hover { filter: brightness(1.05); }
 .btn:focus { outline: 2px solid var(--brand-blue-300); outline-offset: 2px; }
 
