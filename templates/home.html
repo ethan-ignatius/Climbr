@@ -440,6 +440,29 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
 }).addTo(map);
 
+// let user click anywhere to add a route
+map.on('click', function (e) {
+  const lat = e.latlng.lat.toFixed(6);
+  const lng = e.latlng.lng.toFixed(6);
+
+  // only show the button if the user is logged in
+  const addUrl = "{% url 'routes:add' %}?lat=" + lat + "&lng=" + lng;
+
+  const html = `
+    <div style="text-align:center;">
+      <p>Add a route here?</p>
+      <a href="${addUrl}" class="btn btn-primary" style="padding:6px 12px; border-radius:6px; display:inline-block;">
+        Go to Add Route
+      </a>
+    </div>
+  `;
+
+  L.popup()
+    .setLatLng(e.latlng)
+    .setContent(html)
+    .openOn(map);
+});
+
 const createMarkerIcon = (difficulty) => {
   const color =
     difficulty <= 3 ? '#10b981' :
