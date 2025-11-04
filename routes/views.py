@@ -123,7 +123,15 @@ def route_create(request):
             return redirect("routes:detail", pk=route.pk)
         # fall through to show form with errors
     else:
-        form = RouteForm(user=request.user)
+        lat = request.GET.get("lat")
+        lng = request.GET.get("lng")
+
+        initial = {}
+        if lat and lng:
+            initial["latitude"] = lat
+            initial["longitude"] = lng
+
+        form = RouteForm(user=request.user, initial=initial)
 
     context = {"form": form}
     return render(request, "routes/route_form.html", context)

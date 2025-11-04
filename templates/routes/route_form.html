@@ -176,6 +176,9 @@ document.addEventListener('DOMContentLoaded', function(){
   var searchInput = document.getElementById('location-search');
   var searchResults = document.getElementById('search-results');
   var useLocationBtn = document.getElementById('use-my-location');
+  var prefilledLat = parseFloat(latEl.value);
+  var prefilledLng = parseFloat(lngEl.value);
+  var hasPrefilledCoords = !isNaN(prefilledLat) && !isNaN(prefilledLng);
 
   // Add saved user location marker if available
   if (savedUserLocation) {
@@ -217,6 +220,10 @@ document.addEventListener('DOMContentLoaded', function(){
         );
         // If more than ~0.01 degrees apart (~1km), don't auto-center
         shouldCenter = distance < 0.01;
+      }
+
+      if (hasPrefilledCoords) {
+        shouldCenter = false;
       }
       
       if (shouldCenter) {
@@ -300,8 +307,12 @@ document.addEventListener('DOMContentLoaded', function(){
   var lat = parseFloat(latEl.value);
   var lng = parseFloat(lngEl.value);
   if(!isNaN(lat) && !isNaN(lng)){
-    setLatLng({lat:lat, lng:lng});
-    map.setView([lat, lng], 12);
+    setLatLng({lat: lat, lng: lng});
+    map.setView([lat, lng], 14);
+  } else {
+    if (savedUserLocation) {
+      map.setView([savedUserLocation.latitude, savedUserLocation.longitude], 10);
+    }
   }
 
   // Use My Location button handler
