@@ -9,7 +9,7 @@ SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY",
     "django-insecure-_replace_with_a_random_long_string_for_local_dev_"
 )
-ALLOWED_HOSTS: list[str] = []  # fine empty with DEBUG=True
+ALLOWED_HOSTS = ["*"]  # fine empty with DEBUG=True
 
 # ---- Apps ----
 INSTALLED_APPS = [
