@@ -1,4 +1,4 @@
-# Climbr
+
 An app where individuals can post, view, and rate outdoor climbs. 
 
 Password for both climbers are Hellothere142857

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Climbr - Discover Routes{% endblock %}
+{% block title %}ClimbApp - Discover Routes{% endblock %}
 
 {% block content %}
 <div class="map-container">
@@ -481,7 +481,7 @@ const createMarkerIcon = (difficulty) => {
    We use Nominatim and take the FIRST result. Results are cached in
    localStorage and requests are rate-limited to be polite.
 --------------------------------------------------------------------------- */
-const GEOCACHE_KEY = 'climbr.geocodeCache.v1';
+const GEOCACHE_KEY = 'Climbr.geocodeCache.v1';
 const _geoCacheObj = JSON.parse(localStorage.getItem(GEOCACHE_KEY) || '{}');
 const geocodeCache = new Map(Object.entries(_geoCacheObj));
 
@@ -1079,7 +1079,7 @@ async function performGeocodingSearch(query) {
       { 
         signal: activeSearchController.signal,
         headers: {
-          'User-Agent': 'ClimbApp/1.0'
+          'User-Agent': 'Climbr/1.0'
         }
       }
     );
@@ -1226,7 +1226,7 @@ function selectLocation(result, displayName) {
   map.setView([lat, lng], 12);
 
   // Store in localStorage
-  localStorage.setItem('climbr-last-search', JSON.stringify({
+  localStorage.setItem('Climbr-last-search', JSON.stringify({
     name: displayName,
     lat: lat,
     lng: lng
