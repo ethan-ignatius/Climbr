@@ -5,6 +5,8 @@ from .views import MyRoutesView
 app_name = "routes"
 
 urlpatterns = [
+    path("search/", views.route_search, name="search"),
+
     path("add/", views.route_create, name="add"),
     path("<int:pk>/edit/", views.route_edit, name="edit"),
     path("<int:pk>/delete/", views.route_delete, name="delete"),

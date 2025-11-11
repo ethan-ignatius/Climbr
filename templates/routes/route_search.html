@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Search Routes – ClimbApp{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <h1>Search Routes</h1>
+  <p class="muted">Filter by difficulty and distance from your current location.</p>
+</div>
+
+<form id="search-form" method="get" class="card" style="margin-bottom: 16px;">
+  <!-- Difficulty row -->
+  <div class="row" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+    <label for="difficulty_min" style="font-weight:600; margin:0;">Difficulty</label>
+
+    <select id="difficulty_min" name="difficulty_min" style="width: 80px; flex:0 0 auto;">
+      <option value="1" {% if filters.difficulty_min == 1 %}selected{% endif %}>1</option>
+      <option value="2" {% if filters.difficulty_min == 2 %}selected{% endif %}>2</option>
+      <option value="3" {% if filters.difficulty_min == 3 %}selected{% endif %}>3</option>
+      <option value="4" {% if filters.difficulty_min == 4 %}selected{% endif %}>4</option>
+      <option value="5" {% if filters.difficulty_min == 5 %}selected{% endif %}>5</option>
+      <option value="6" {% if filters.difficulty_min == 6 %}selected{% endif %}>6</option>
+      <option value="7" {% if filters.difficulty_min == 7 %}selected{% endif %}>7</option>
+      <option value="8" {% if filters.difficulty_min == 8 %}selected{% endif %}>8</option>
+      <option value="9" {% if filters.difficulty_min == 9 %}selected{% endif %}>9</option>
+      <option value="10" {% if filters.difficulty_min == 10 %}selected{% endif %}>10</option>
+    </select>
+
+    <span class="muted" style="padding:0 2px;">to</span>
+
+    <select id="difficulty_max" name="difficulty_max" style="width: 80px; flex:0 0 auto;">
+      <option value="1" {% if filters.difficulty_max == 1 %}selected{% endif %}>1</option>
+      <option value="2" {% if filters.difficulty_max == 2 %}selected{% endif %}>2</option>
+      <option value="3" {% if filters.difficulty_max == 3 %}selected{% endif %}>3</option>
+      <option value="4" {% if filters.difficulty_max == 4 %}selected{% endif %}>4</option>
+      <option value="5" {% if filters.difficulty_max == 5 %}selected{% endif %}>5</option>
+      <option value="6" {% if filters.difficulty_max == 6 %}selected{% endif %}>6</option>
+      <option value="7" {% if filters.difficulty_max == 7 %}selected{% endif %}>7</option>
+      <option value="8" {% if filters.difficulty_max == 8 %}selected{% endif %}>8</option>
+      <option value="9" {% if filters.difficulty_max == 9 %}selected{% endif %}>9</option>
+      <option value="10" {% if filters.difficulty_max == 10 %}selected{% endif %}>10</option>
+    </select>
+
+    <small class="muted" style="margin-left:6px;">1 = easiest, 10 = hardest</small>
+  </div>
+
+  <!-- Distance + Location row (same line) -->
+  <div class="row" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+    <label for="radius" style="font-weight:600; margin:0;">Max Distance</label>
+    <input type="number" id="radius" name="radius" min="1" step="1"
+           value="{{ filters.radius|floatformat:0|default:25 }}"
+           style="width: 90px;" />
+    <span class="muted">miles</span>
+
+    <div style="width:12px; height:1px;"></div>
+
+    <button type="button" id="useLocationBtn" class="btn">Use my location</button>
+    <button type="submit" class="btn btn-primary">Apply filters</button>
+  </div>
+
+  <!-- Single merged hint/status line -->
+  <div id="locStatus" class="muted" style="margin-top:4px;">
+    {% if active_location %}
+      Using device location: {{ active_location.latitude|floatformat:4 }}, {{ active_location.longitude|floatformat:4 }}.
+    {% elif used_profile_fallback %}
+      Using your saved profile location (click “Use my location” to update).
+    {% else %}
+      We’ll use your device location when you click “Use my location”.
+    {% endif %}
+  </div>
+
+  <!-- Hidden lat/lng -->
+  <input type="hidden" id="lat" name="lat" value="{% if active_location %}{{ active_location.latitude }}{% endif %}">
+  <input type="hidden" id="lng" name="lng" value="{% if active_location %}{{ active_location.longitude }}{% endif %}">
+</form>
+
+<!-- Single-line results meta -->
+<div style="margin-bottom: 10px;">
+  {% if active_location %}
+    <span><strong>{{ results_count }}</strong> route{% if results_count != 1 %}s{% endif %} found within {{ filters.radius|floatformat:0 }} mi, sorted by distance.</span>
+  {% else %}
+    <span><strong>{{ results_count }}</strong> route{% if results_count != 1 %}s{% endif %} found. Showing difficulty {{ filters.difficulty_min }}–{{ filters.difficulty_max }}. Use your location to filter by distance.</span>
+  {% endif %}
+</div>
+
+{% if routes %}
+  <div class="stack">
+    {% for r in routes %}
+      <div class="card">
+        <div class="row" style="justify-content: space-between; align-items: baseline;">
+          <a class="job-title" href="{% url 'routes:detail' r.pk %}" style="font-weight:700; text-decoration:none;">
+            {{ r.title }}
+          </a>
+          <small class="muted">by {{ r.author.username }} · {{ r.created_at|date:"Y-m-d H:i" }}</small>
+        </div>
+
+        <div class="row" style="gap: 10px; align-items: center; margin: 4px 0 8px;">
+          <span class="pill">Difficulty {{ r.difficulty }}</span>
+          {% if r.distance_miles %}
+            <span class="muted">·</span>
+            <span class="pill">{{ r.distance_miles|floatformat:1 }} mi away</span>
+          {% endif %}
+          {% if r.location_name %}
+            <span class="muted">· {{ r.location_name }}</span>
+          {% endif %}
+        </div>
+
+        {% with imgs=r.images.all %}
+          {% if imgs|length %}
+            <div class="row" style="gap:10px; margin-top: 8px; overflow-x:auto;">
+              {% for img in imgs|slice:":3" %}
+                <img src="{{ img.image.url }}" alt="{{ img.alt_text|default:'Route image' }}" style="height: 90px; width: 90px; object-fit: cover; border-radius: 8px; border:1px solid var(--border);" loading="lazy">
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        {% if r.description %}
+          <p class="muted" style="margin: 0.25rem 0 0;">{{ r.description|truncatechars:160 }}</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card">
+    <p class="muted">No routes match your filters.</p>
+  </div>
+{% endif %}
+
+<!-- Server-provided flags for JS -->
+<div id="search-flags"
+     data-has-active-location="{% if active_location %}true{% else %}false{% endif %}"
+     hidden></div>
+
+<script>
+(function(){
+  // Keep min <= max
+  const minEl = document.getElementById('difficulty_min');
+  const maxEl = document.getElementById('difficulty_max');
+  function clampPair(changed){
+    const minVal = parseInt(minEl.value || '1', 10);
+    const maxVal = parseInt(maxEl.value || '10', 10);
+    if (minVal > maxVal) {
+      if (changed === 'min') { maxEl.value = String(minVal); }
+      else { minEl.value = String(maxVal); }
+    }
+  }
+  minEl.addEventListener('change', () => clampPair('min'));
+  maxEl.addEventListener('change', () => clampPair('max'));
+
+  // Geolocation handlers
+  const useBtn = document.getElementById('useLocationBtn');
+  const status = document.getElementById('locStatus');
+  const latInput = document.getElementById('lat');
+  const lngInput = document.getElementById('lng');
+  const form = document.getElementById('search-form');
+
+  function setStatus(t){ if (status) status.textContent = t; }
+
+  function submitWithPosition(pos){
+    const crd = pos.coords;
+    latInput.value = crd.latitude.toFixed(6);
+    lngInput.value = crd.longitude.toFixed(6);
+    setStatus('Using device location…');
+    form.submit();
+  }
+  function handleGeoError(err){
+    console.warn('Geolocation error', err);
+    setStatus('Could not get device location. You can still search by difficulty.');
+  }
+
+  useBtn.addEventListener('click', function(){
+    if (!navigator.geolocation) {
+      setStatus('Your browser does not support geolocation.');
+      return;
+    }
+    setStatus('Getting your device location…');
+    navigator.geolocation.getCurrentPosition(submitWithPosition, handleGeoError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    });
+  });
+
+  // Auto-attempt geolocation on first visit — read flag from data attribute.
+  const flagsEl = document.getElementById('search-flags');
+  const hasActiveLocation = flagsEl && flagsEl.dataset.hasActiveLocation === 'true';
+  if (!hasActiveLocation && 'geolocation' in navigator) {
+    navigator.geolocation.getCurrentPosition(
+      function(pos){ submitWithPosition(pos); },
+      function(){ console.log('Geolocation denied or failed.'); },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+  }
+})();
+</script>
+{% endblock %}

@@ -21,6 +21,7 @@
       <nav class="links links-right">
         <a href="{% url 'home' %}">Home</a>
         <a href="{% url 'routes:list' %}">All Routes</a>
+        <a href="{% url 'routes:search' %}">Search Routes</a>
         {% if user.is_authenticated %}
           <a href="{% url 'routes:my_routes' %}"> My Routes</a>
           <a href="{% url 'routes:add' %}">Add Route</a>

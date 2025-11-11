@@ -7,7 +7,10 @@ from .models import Route, RouteImage
 
 import os
 import re
+import math
+import requests
 import unicodedata
+from functools import lru_cache
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import ListView
@@ -218,3 +221,147 @@ def route_edit(request, pk: int):
     }
     
     return render(request, "routes/route_form.html", context)
+
+@lru_cache(maxsize=512)
+def _geocode_first(location_text: str):
+    """
+    Return (lat, lon) using the first result from Nominatim for the given text.
+    Cached in-process to avoid repeat lookups.
+    """
+    if not location_text:
+        return None
+
+    base = "https://nominatim.openstreetmap.org/search"
+    params = {"q": location_text, "format": "jsonv2", "limit": 1}
+    headers = {"User-Agent": "ClimbApp/1.0 (contact@climbapp.local)"}
+
+    try:
+        if requests:
+            resp = requests.get(base, params=params, headers=headers, timeout=6)
+            resp.raise_for_status()
+            data = resp.json()
+        else:
+            import urllib.parse, urllib.request, json as _json
+            url = base + "?" + urllib.parse.urlencode(params)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=6) as f:
+                data = _json.loads(f.read().decode("utf-8"))
+        if isinstance(data, list) and data:
+            return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        # Swallow errors and just treat it as ungeocodable
+        return None
+
+    return None
+
+
+def route_search(request):
+    """
+    Public search by difficulty + distance. If a route lacks coordinates but has
+    a location text, we geocode it using the first map result (Nominatim) and
+    use that to compute distance.
+    """
+    # ---- input parsing
+    def as_int(val, default, lo, hi):
+        try:
+            v = int(val)
+            return max(lo, min(hi, v))
+        except (TypeError, ValueError):
+            return default
+
+    diff_min = as_int(request.GET.get("difficulty_min"), 1, 1, 10)
+    diff_max = as_int(request.GET.get("difficulty_max"), 10, 1, 10)
+    if diff_min > diff_max:
+        diff_min, diff_max = diff_max, diff_min
+
+    try:
+        radius = float(request.GET.get("radius", 25))
+    except (TypeError, ValueError):
+        radius = 25.0
+
+    def as_float(k):
+        v = request.GET.get(k)
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    lat = as_float("lat")
+    lng = as_float("lng")
+
+    # Optional fallback to saved profile location if user is logged in
+    profile_loc = None
+    user = getattr(request, "user", None)
+    if (lat is None or lng is None) and getattr(user, "is_authenticated", False) and hasattr(user, "profile"):
+        p = user.profile
+        if getattr(p, "latitude", None) is not None and getattr(p, "longitude", None) is not None:
+            profile_loc = (float(p.latitude), float(p.longitude))
+            if lat is None: lat = profile_loc[0]
+            if lng is None: lng = profile_loc[1]
+
+    # ---- query
+    from .models import Route
+    qs = Route.objects.filter(difficulty__gte=diff_min, difficulty__lte=diff_max)
+    routes_all = list(qs.select_related("author").prefetch_related("images"))
+
+    # ---- helpers
+    def haversine_miles(lat1, lon1, lat2, lon2):
+        R = 3958.7613  # miles
+        phi1 = math.radians(lat1); phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1); dlambda = math.radians(lon2 - lon1)
+        a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+        return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    def get_location_text(route):
+        # Try a few common field names; adjust if your model uses a different name
+        for field in ("location_name", "location", "address", "place"):
+            val = getattr(route, field, None)
+            if val:
+                return str(val)
+        return None
+
+    # ---- distance filtering
+    active_location = None
+    within = []   # routes with known/derived coordinates and within radius
+    unknown = []  # couldn’t geocode (still included at the end)
+
+    if lat is not None and lng is not None:
+        active_location = {"latitude": float(lat), "longitude": float(lng)}
+
+        for r in routes_all:
+            rlat = getattr(r, "latitude", None)
+            rlng = getattr(r, "longitude", None)
+
+            if rlat is None or rlng is None:
+                # Try to geocode text-only location
+                loc_text = get_location_text(r)
+                coords = _geocode_first(loc_text) if loc_text else None
+                if coords:
+                    rlat, rlng = coords  # ephemeral; not persisted
+
+            if rlat is not None and rlng is not None:
+                d = haversine_miles(float(rlat), float(rlng), float(lat), float(lng))
+                setattr(r, "distance_miles", d)
+                if d <= radius:
+                    within.append(r)
+            else:
+                unknown.append(r)
+
+        within.sort(key=lambda x: getattr(x, "distance_miles", 1e9))
+        filtered = within + unknown
+    else:
+        # No user location: just difficulty filter (no distance)
+        filtered = routes_all
+        within = filtered
+        unknown = []
+
+    context = {
+        "routes": filtered,
+        "filters": {"difficulty_min": diff_min, "difficulty_max": diff_max, "radius": radius},
+        "active_location": active_location,
+        "used_profile_fallback": profile_loc is not None,
+        "results_count": len(filtered),
+        "within_count": len(within),
+        "unknown_count": len(unknown),
+    }
+    return render(request, "routes/route_search.html", context)
