@@ -347,6 +347,110 @@
   color: white;
 }
 
+/* Favorite button styles */
+.btn-favorite {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  color: #6b7280;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-favorite:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.btn-favorite.favorited {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.btn-favorite .heart-icon {
+  font-size: 16px;
+}
+
+/* Vote buttons styles */
+.vote-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.btn-vote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  color: #6b7280;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 50px;
+  justify-content: center;
+}
+
+.btn-vote:hover {
+  border-color: #d1d5db;
+  background: #f9fafb;
+}
+
+.btn-vote.upvote.active {
+  border-color: #10b981;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.btn-vote.downvote.active {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.vote-display {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.vote-count {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Favorite heart on map markers */
+.favorite-heart {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 12px;
+  background: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
 .hidden {
   display: none;
 }
@@ -393,6 +497,7 @@
 <!-- Django data injection using JSON script tags -->
 {{ user_location|json_script:"user-location-data" }}
 {{ routes|json_script:"routes-data" }}
+{{ request.user.is_authenticated|json_script:"user-auth-data" }}
 
 <script>
 // Parse Django data from JSON script tags
@@ -401,6 +506,9 @@ const userLocation = userLocationElement ? JSON.parse(userLocationElement.textCo
 
 const routesElement = document.getElementById('routes-data');
 const routesData = routesElement ? JSON.parse(routesElement.textContent) : [];
+
+const authElement = document.getElementById('user-auth-data');
+const isAuthenticated = authElement ? JSON.parse(authElement.textContent) : false;
 
 // Process routes data for the map (data is already in the right format)
 const routes = routesData.map(route => ({
@@ -412,7 +520,11 @@ const routes = routesData.map(route => ({
   location: route.location_name,
   lat: route.latitude,
   lng: route.longitude,
-  detailUrl: `/routes/${route.pk}/`
+  detailUrl: `/routes/${route.pk}/`,
+  is_favorited: route.is_favorited || false,
+  upvotes_count: route.upvotes_count || 0,
+  downvotes_count: route.downvotes_count || 0,
+  user_vote: route.user_vote || null
 }));
 
 // Initialize the map
@@ -463,14 +575,20 @@ map.on('click', function (e) {
     .openOn(map);
 });
 
-const createMarkerIcon = (difficulty) => {
+const createMarkerIcon = (difficulty, isFavorited = false) => {
   const color =
     difficulty <= 3 ? '#10b981' :
     difficulty <= 6 ? '#f59e0b' : '#ef4444';
+  
+  const favoriteHeart = isFavorited ? 
+    `<div class="favorite-heart">❤️</div>` : '';
 
   return L.divIcon({
-    className: 'route-marker',                 // wrapper is now transparent
-    html: `<div class="route-dot" style="background:${color}">${difficulty}</div>`,
+    className: 'route-marker',
+    html: `
+      <div class="route-dot" style="background:${color}">${difficulty}</div>
+      ${favoriteHeart}
+    `,
     iconSize: [24, 24],
     iconAnchor: [12, 12]
   });
@@ -599,7 +717,7 @@ async function renderRouteMarkersAndFit() {
     if (!coords) continue;
 
     const marker = L.marker([coords.lat, coords.lng], {
-      icon: createMarkerIcon(route.difficulty)
+      icon: createMarkerIcon(route.difficulty, route.is_favorited)
     }).addTo(routeLayer);
 
     marker.routeData = route;
@@ -630,6 +748,53 @@ renderRouteMarkersAndFit();
 function showRoutePopup(route) {
   const popup = document.getElementById('route-popup');
   const popupBody = document.getElementById('popup-body');
+  
+  let favoriteButton = '';
+  let voteButtons = '';
+  
+  if (isAuthenticated) {
+    const favoriteClass = route.is_favorited ? 'favorited' : '';
+    const heartIcon = route.is_favorited ? '❤️' : '🤍';
+    const favoriteText = route.is_favorited ? 'Favorited' : 'Favorite';
+    
+    favoriteButton = `
+      <button class="btn-favorite ${favoriteClass}" 
+              onclick="toggleFavorite(${route.id})" 
+              data-route-id="${route.id}">
+        <span class="heart-icon">${heartIcon}</span>
+        <span class="favorite-text">${favoriteText}</span>
+      </button>
+    `;
+    
+    const upvoteActive = route.user_vote === true ? 'active' : '';
+    const downvoteActive = route.user_vote === false ? 'active' : '';
+    
+    voteButtons = `
+      <div class="vote-buttons">
+        <button class="btn-vote upvote ${upvoteActive}" 
+                onclick="voteRoute(${route.id}, true)" 
+                data-route-id="${route.id}">
+          <span class="vote-icon">👍</span>
+          <span class="vote-count">${route.upvotes_count || 0}</span>
+        </button>
+        <button class="btn-vote downvote ${downvoteActive}" 
+                onclick="voteRoute(${route.id}, false)" 
+                data-route-id="${route.id}">
+          <span class="vote-icon">👎</span>
+          <span class="vote-count">${route.downvotes_count || 0}</span>
+        </button>
+      </div>
+    `;
+  } else {
+    voteButtons = `
+      <div class="vote-display">
+        <span class="vote-count">👍 ${route.upvotes_count || 0}</span>
+        <span class="vote-count">👎 ${route.downvotes_count || 0}</span>
+      </div>
+    `;
+  }
+
+  const locationDisplay = route.location ? `<span>📍 ${route.location}</span>` : '';
 
   popupBody.innerHTML = `
     <div class="route-info">
@@ -637,12 +802,14 @@ function showRoutePopup(route) {
       <div class="route-meta">
         <span class="route-difficulty">V${route.difficulty}</span>
         <span>by ${route.author}</span>
-        ${route.location ? `<span>📍 ${route.location}</span>` : ''}
+        ${locationDisplay}
       </div>
       <div class="route-description">${route.description}</div>
       <div class="route-actions">
         <a href="${route.detailUrl}" class="btn-view">View Details</a>
+        ${favoriteButton}
       </div>
+      ${voteButtons}
     </div>
   `;
 
@@ -653,6 +820,138 @@ function showRoutePopup(route) {
 document.getElementById('close-popup').addEventListener('click', function() {
   document.getElementById('route-popup').classList.add('hidden');
 });
+
+// Toggle favorite status for a route
+async function toggleFavorite(routeId) {
+  if (!isAuthenticated) {
+    alert('Please log in to favorite routes.');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/routes/${routeId}/favorite/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCsrfToken(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      // Update the route data
+      const route = routes.find(r => r.id === routeId);
+      if (route) {
+        route.is_favorited = data.is_favorited;
+        
+        // Update the button in the popup
+        const button = document.querySelector(`[data-route-id="${routeId}"].btn-favorite`);
+        if (button) {
+          const heartIcon = button.querySelector('.heart-icon');
+          const favoriteText = button.querySelector('.favorite-text');
+          
+          if (data.is_favorited) {
+            button.classList.add('favorited');
+            heartIcon.textContent = '❤️';
+            favoriteText.textContent = 'Favorited';
+          } else {
+            button.classList.remove('favorited');
+            heartIcon.textContent = '🤍';
+            favoriteText.textContent = 'Favorite';
+          }
+        }
+        
+        // Update the marker on the map
+        const marker = markers.find(m => m.routeData.id === routeId);
+        if (marker) {
+          marker.setIcon(createMarkerIcon(route.difficulty, route.is_favorited));
+        }
+      }
+    } else {
+      alert('Error updating favorite: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Error toggling favorite:', error);
+    alert('Error updating favorite. Please try again.');
+  }
+}
+
+// Vote on a route (upvote or downvote)
+async function voteRoute(routeId, isUpvote) {
+  if (!isAuthenticated) {
+    alert('Please log in to vote on routes.');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/routes/${routeId}/vote/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCsrfToken(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `is_upvote=${isUpvote}`
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      // Update the route data
+      const route = routes.find(r => r.id === routeId);
+      if (route) {
+        route.user_vote = data.user_vote;
+        route.upvotes_count = data.upvotes_count;
+        route.downvotes_count = data.downvotes_count;
+        
+        // Update the vote buttons in the popup
+        const upvoteBtn = document.querySelector(`[data-route-id="${routeId}"].upvote`);
+        const downvoteBtn = document.querySelector(`[data-route-id="${routeId}"].downvote`);
+        
+        if (upvoteBtn && downvoteBtn) {
+          // Reset active states
+          upvoteBtn.classList.remove('active');
+          downvoteBtn.classList.remove('active');
+          
+          // Set active state based on user vote
+          if (data.user_vote === true) {
+            upvoteBtn.classList.add('active');
+          } else if (data.user_vote === false) {
+            downvoteBtn.classList.add('active');
+          }
+          
+          // Update vote counts
+          upvoteBtn.querySelector('.vote-count').textContent = data.upvotes_count;
+          downvoteBtn.querySelector('.vote-count').textContent = data.downvotes_count;
+        }
+      }
+    } else {
+      alert('Error voting: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Error voting:', error);
+    alert('Error voting. Please try again.');
+  }
+}
+
+// Get CSRF token for AJAX requests
+function getCsrfToken() {
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'csrftoken') {
+      return value;
+    }
+  }
+  // Fallback: try to get from meta tag or form
+  const csrfMeta = document.querySelector('meta[name=csrf-token]');
+  if (csrfMeta) return csrfMeta.getAttribute('content');
+  
+  const csrfInput = document.querySelector('input[name=csrfmiddlewaretoken]');
+  if (csrfInput) return csrfInput.value;
+  
+  return '';
+}
 
 /* ---------------------------------------------------------------------------
    Search functionality with geocoding (unchanged other than being below)
@@ -729,110 +1028,6 @@ const localLocationDatabase = [
   { name: 'Stockton, CA', lat: 37.9577, lng: -121.2908, aliases: ['stockton'] },
   { name: 'Cincinnati, OH', lat: 39.1031, lng: -84.5120, aliases: ['cincinnati'] },
   { name: 'St. Paul, MN', lat: 44.9537, lng: -93.0900, aliases: ['st paul', 'saint paul'] },
-  { name: 'Toledo, OH', lat: 41.6528, lng: -83.5379, aliases: ['toledo'] },
-  { name: 'Greensboro, NC', lat: 36.0726, lng: -79.7920, aliases: ['greensboro'] },
-  { name: 'Newark, NJ', lat: 40.7357, lng: -74.1724, aliases: ['newark'] },
-  { name: 'Plano, TX', lat: 33.0198, lng: -96.6989, aliases: ['plano'] },
-  { name: 'Henderson, NV', lat: 36.0395, lng: -114.9817, aliases: ['henderson'] },
-  { name: 'Lincoln, NE', lat: 40.8136, lng: -96.7026, aliases: ['lincoln'] },
-  { name: 'Buffalo, NY', lat: 42.8864, lng: -78.8784, aliases: ['buffalo'] },
-  { name: 'Jersey City, NJ', lat: 40.7178, lng: -74.0431, aliases: ['jersey city'] },
-  { name: 'Chula Vista, CA', lat: 32.6401, lng: -117.0842, aliases: ['chula vista'] },
-  { name: 'Fort Wayne, IN', lat: 41.0793, lng: -85.1394, aliases: ['fort wayne'] },
-  { name: 'Orlando, FL', lat: 28.5383, lng: -81.3792, aliases: ['orlando'] },
-  { name: 'St. Petersburg, FL', lat: 27.7676, lng: -82.6403, aliases: ['st petersburg', 'saint petersburg'] },
-  { name: 'Chandler, AZ', lat: 33.3062, lng: -111.8413, aliases: ['chandler'] },
-  { name: 'Laredo, TX', lat: 27.5306, lng: -99.4803, aliases: ['laredo'] },
-  { name: 'Norfolk, VA', lat: 36.8468, lng: -76.2852, aliases: ['norfolk'] },
-  { name: 'Durham, NC', lat: 35.9940, lng: -78.8986, aliases: ['durham'] },
-  { name: 'Madison, WI', lat: 43.0731, lng: -89.4012, aliases: ['madison'] },
-  { name: 'Lubbock, TX', lat: 33.5779, lng: -101.8552, aliases: ['lubbock'] },
-  { name: 'Irvine, CA', lat: 33.6846, lng: -117.8265, aliases: ['irvine'] },
-  { name: 'Winston-Salem, NC', lat: 36.0999, lng: -80.2442, aliases: ['winston salem'] },
-  { name: 'Glendale, AZ', lat: 33.5387, lng: -112.1860, aliases: ['glendale'] },
-  { name: 'Garland, TX', lat: 32.9126, lng: -96.6389, aliases: ['garland'] },
-  { name: 'Hialeah, FL', lat: 25.8576, lng: -80.2781, aliases: ['hialeah'] },
-  { name: 'Reno, NV', lat: 39.5296, lng: -119.8138, aliases: ['reno'] },
-  { name: 'Chesapeake, VA', lat: 36.8190, lng: -76.2750, aliases: ['chesapeake'] },
-  { name: 'Gilbert, AZ', lat: 33.3528, lng: -111.7890, aliases: ['gilbert'] },
-  { name: 'Baton Rouge, LA', lat: 30.4515, lng: -91.1871, aliases: ['baton rouge'] },
-  { name: 'Irving, TX', lat: 32.8140, lng: -96.9489, aliases: ['irving'] },
-  { name: 'Scottsdale, AZ', lat: 33.4942, lng: -111.9261, aliases: ['scottsdale'] },
-  { name: 'North Las Vegas, NV', lat: 36.1989, lng: -115.1175, aliases: ['north las vegas'] },
-  { name: 'Fremont, CA', lat: 37.5485, lng: -121.9886, aliases: ['fremont'] },
-  { name: 'Boise, ID', lat: 43.6150, lng: -116.2023, aliases: ['boise'] },
-  { name: 'Richmond, VA', lat: 37.5407, lng: -77.4360, aliases: ['richmond'] },
-  { name: 'San Bernardino, CA', lat: 34.1083, lng: -117.2898, aliases: ['san bernardino'] },
-  { name: 'Birmingham, AL', lat: 33.5207, lng: -86.8025, aliases: ['birmingham'] },
-  { name: 'Spokane, WA', lat: 47.6587, lng: -117.4260, aliases: ['spokane'] },
-  { name: 'Rochester, NY', lat: 43.1566, lng: -77.6088, aliases: ['rochester'] },
-  { name: 'Des Moines, IA', lat: 41.5868, lng: -93.6250, aliases: ['des moines'] },
-  { name: 'Modesto, CA', lat: 37.6391, lng: -120.9969, aliases: ['modesto'] },
-  { name: 'Fayetteville, NC', lat: 35.0527, lng: -78.8784, aliases: ['fayetteville'] },
-  { name: 'Tacoma, WA', lat: 47.2529, lng: -122.4443, aliases: ['tacoma'] },
-  { name: 'Oxnard, CA', lat: 34.1975, lng: -119.1771, aliases: ['oxnard'] },
-  { name: 'Fontana, CA', lat: 34.0922, lng: -117.4350, aliases: ['fontana'] },
-  { name: 'Columbus, GA', lat: 32.4610, lng: -84.9877, aliases: ['columbus ga'] },
-  { name: 'Montgomery, AL', lat: 32.3668, lng: -86.3000, aliases: ['montgomery'] },
-  { name: 'Moreno Valley, CA', lat: 33.9425, lng: -117.2297, aliases: ['moreno valley'] },
-  { name: 'Shreveport, LA', lat: 32.5252, lng: -93.7502, aliases: ['shreveport'] },
-  { name: 'Aurora, IL', lat: 41.7606, lng: -88.3201, aliases: ['aurora il'] },
-  { name: 'Yonkers, NY', lat: 40.9312, lng: -73.8988, aliases: ['yonkers'] },
-  { name: 'Akron, OH', lat: 41.0814, lng: -81.5190, aliases: ['akron'] },
-  { name: 'Huntington Beach, CA', lat: 33.6603, lng: -117.9992, aliases: ['huntington beach'] },
-  { name: 'Little Rock, AR', lat: 34.7465, lng: -92.2896, aliases: ['little rock'] },
-  { name: 'Augusta, GA', lat: 33.4735, lng: -82.0105, aliases: ['augusta'] },
-  { name: 'Amarillo, TX', lat: 35.2220, lng: -101.8313, aliases: ['amarillo'] },
-  { name: 'Glendale, CA', lat: 34.1425, lng: -118.2551, aliases: ['glendale ca'] },
-  { name: 'Mobile, AL', lat: 30.6944, lng: -88.0431, aliases: ['mobile'] },
-  { name: 'Grand Rapids, MI', lat: 42.9634, lng: -85.6681, aliases: ['grand rapids'] },
-  { name: 'Salt Lake City, UT', lat: 40.7608, lng: -111.8910, aliases: ['slc', 'salt lake city'] },
-  { name: 'Tallahassee, FL', lat: 30.4518, lng: -84.2807, aliases: ['tallahassee'] },
-  { name: 'Huntsville, AL', lat: 34.7304, lng: -86.5861, aliases: ['huntsville'] },
-  { name: 'Grand Prairie, TX', lat: 32.7460, lng: -96.9978, aliases: ['grand prairie'] },
-  { name: 'Knoxville, TN', lat: 35.9606, lng: -83.9207, aliases: ['knoxville'] },
-  { name: 'Worcester, MA', lat: 42.2626, lng: -71.8023, aliases: ['worcester'] },
-  { name: 'Newport News, VA', lat: 37.0871, lng: -76.4730, aliases: ['newport news'] },
-  { name: 'Brownsville, TX', lat: 25.9018, lng: -97.4975, aliases: ['brownsville'] },
-  { name: 'Santa Clarita, CA', lat: 34.3917, lng: -118.5426, aliases: ['santa clarita'] },
-  { name: 'Providence, RI', lat: 41.8240, lng: -71.4128, aliases: ['providence'] },
-  { name: 'Fort Lauderdale, FL', lat: 26.1224, lng: -80.1373, aliases: ['fort lauderdale'] },
-  { name: 'Chattanooga, TN', lat: 35.0456, lng: -85.3097, aliases: ['chattanooga'] },
-  { name: 'Tempe, AZ', lat: 33.4255, lng: -111.9400, aliases: ['tempe'] },
-  { name: 'Oceanside, CA', lat: 33.1959, lng: -117.3795, aliases: ['oceanside'] },
-  { name: 'Garden Grove, CA', lat: 33.7739, lng: -117.9415, aliases: ['garden grove'] },
-  { name: 'Rancho Cucamonga, CA', lat: 34.1064, lng: -117.5931, aliases: ['rancho cucamonga'] },
-  { name: 'Santa Rosa, CA', lat: 38.4404, lng: -122.7141, aliases: ['santa rosa'] },
-  { name: 'Peoria, AZ', lat: 33.5806, lng: -112.2374, aliases: ['peoria'] },
-  { name: 'Fort Collins, CO', lat: 40.5853, lng: -105.0844, aliases: ['fort collins'] },
-  { name: 'Hayward, CA', lat: 37.6688, lng: -122.0808, aliases: ['hayward'] },
-  { name: 'Pomona, CA', lat: 34.0553, lng: -117.7500, aliases: ['pomona'] },
-  { name: 'Cary, NC', lat: 35.7915, lng: -78.7811, aliases: ['cary'] },
-  { name: 'Corona, CA', lat: 33.8753, lng: -117.5664, aliases: ['corona'] },
-  { name: 'Palmdale, CA', lat: 34.5794, lng: -118.1165, aliases: ['palmdale'] },
-  { name: 'Salinas, CA', lat: 36.6777, lng: -121.6555, aliases: ['salinas'] },
-  { name: 'Paterson, NJ', lat: 40.9168, lng: -74.1718, aliases: ['paterson'] },
-  { name: 'Overland Park, KS', lat: 38.9822, lng: -94.6708, aliases: ['overland park'] },
-  { name: 'Torrance, CA', lat: 33.8358, lng: -118.3406, aliases: ['torrance'] },
-  { name: 'Eugene, OR', lat: 44.0521, lng: -123.0868, aliases: ['eugene'] },
-  { name: 'Flint, MI', lat: 43.0125, lng: -83.6875, aliases: ['flint'] },
-  { name: 'Sioux Falls, SD', lat: 43.5446, lng: -96.7311, aliases: ['sioux falls'] },
-  { name: 'Springfield, MO', lat: 37.2090, lng: -93.2923, aliases: ['springfield mo'] },
-  { name: 'Peoria, IL', lat: 40.6936, lng: -89.5890, aliases: ['peoria il'] },
-  { name: 'Lancaster, CA', lat: 34.6868, lng: -118.1542, aliases: ['lancaster'] },
-  { name: 'Elk Grove, CA', lat: 38.4088, lng: -121.3716, aliases: ['elk grove'] },
-  { name: 'Corona, CA', lat: 33.8753, lng: -117.5664, aliases: ['corona ca'] },
-  { name: 'Thousand Oaks, CA', lat: 34.1706, lng: -118.8376, aliases: ['thousand oaks'] },
-  { name: 'Vallejo, CA', lat: 38.1041, lng: -122.2566, aliases: ['vallejo'] },
-  
-  // Popular Climbing Areas
-  { name: 'Yosemite Valley, CA', lat: 37.7749, lng: -119.4194, aliases: ['yosemite', 'yose'], isClimbing: true },
-  { name: 'Joshua Tree, CA', lat: 33.8734, lng: -116.4069, aliases: ['joshua tree', 'jtree', 'j tree'], isClimbing: true },
-  { name: 'Red River Gorge, KY', lat: 37.7779, lng: -83.6646, aliases: ['red river gorge', 'rrg'], isClimbing: true },
-  { name: 'Boulder, CO', lat: 40.0150, lng: -105.2705, aliases: ['boulder', 'flatirons'], isClimbing: true },
-  { name: 'Moab, UT', lat: 38.5733, lng: -109.5498, aliases: ['moab'], isClimbing: true },
-  { name: 'Eldorado Canyon, CO', lat: 39.9317, lng: -105.2927, aliases: ['eldorado', 'eldo'], isClimbing: true },
-  { name: 'New River Gorge, WV', lat: 37.9773, lng: -81.0784, aliases: ['new river gorge', 'nrg'], isClimbing: true },
   { name: 'Smith Rock, OR', lat: 44.3672, lng: -121.1403, aliases: ['smith rock'], isClimbing: true },
   { name: 'Devils Tower, WY', lat: 44.5902, lng: -104.7139, aliases: ['devils tower'], isClimbing: true },
   { name: 'Red Rocks, NV', lat: 36.1353, lng: -115.4266, aliases: ['red rocks'], isClimbing: true },

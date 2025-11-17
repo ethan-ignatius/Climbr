@@ -44,6 +44,34 @@ class Route(models.Model):
     def has_coords(self) -> bool:
         return self.latitude is not None and self.longitude is not None
 
+    def get_upvotes_count(self):
+        """Get the number of upvotes for this route"""
+        return self.votes.filter(is_upvote=True).count()
+    
+    def get_downvotes_count(self):
+        """Get the number of downvotes for this route"""
+        return self.votes.filter(is_upvote=False).count()
+    
+    def get_net_votes(self):
+        """Get the net vote count (upvotes - downvotes)"""
+        return self.get_upvotes_count() - self.get_downvotes_count()
+    
+    def get_user_vote(self, user):
+        """Get the current user's vote on this route (None, True for upvote, False for downvote)"""
+        if not user.is_authenticated:
+            return None
+        try:
+            vote = self.votes.get(user=user)
+            return vote.is_upvote
+        except Vote.DoesNotExist:
+            return None
+    
+    def is_favorited_by(self, user):
+        """Check if this route is favorited by the given user"""
+        if not user.is_authenticated:
+            return False
+        return self.favorites.filter(user=user).exists()
+
     def youtube_id(self) -> str | None:
         """Extract the YouTube video id from watch / youtu.be / embed / shorts / live / mobile URLs."""
         if not getattr(self, "video_url", None):
@@ -110,3 +138,50 @@ class RouteImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.route.title} (#{self.pk})"
+
+
+class Favorite(models.Model):
+    """Model to track users' favorite routes"""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name="favorite_routes"
+    )
+    route = models.ForeignKey(
+        Route, 
+        on_delete=models.CASCADE, 
+        related_name="favorites"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'route')  # Prevent duplicate favorites
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} favorites {self.route.title}"
+
+
+class Vote(models.Model):
+    """Model to track user votes (upvotes/downvotes) on routes"""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name="route_votes"
+    )
+    route = models.ForeignKey(
+        Route, 
+        on_delete=models.CASCADE, 
+        related_name="votes"
+    )
+    is_upvote = models.BooleanField()  # True for upvote, False for downvote
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'route')  # One vote per user per route
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        vote_type = "upvote" if self.is_upvote else "downvote"
+        return f"{self.user.username} {vote_type}s {self.route.title}"

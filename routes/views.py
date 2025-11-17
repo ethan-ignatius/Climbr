@@ -1,9 +1,12 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, render, redirect
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 
 from .forms import RouteForm
-from .models import Route, RouteImage
+from .models import Route, RouteImage, Favorite, Vote
 
 import os
 import re
@@ -93,10 +96,20 @@ def route_list(request):
 
 def route_detail(request, pk: int):
     route = get_object_or_404(
-        Route.objects.select_related("author").prefetch_related("images"),
+        Route.objects.select_related("author").prefetch_related("images", "favorites", "votes"),
         pk=pk
     )
-    return render(request, "routes/route_detail.html", {"route": route})
+    
+    # Get user's interaction status with this route
+    user_data = {
+        'is_favorited': route.is_favorited_by(request.user) if request.user.is_authenticated else False,
+        'user_vote': route.get_user_vote(request.user) if request.user.is_authenticated else None,
+    }
+    
+    return render(request, "routes/route_detail.html", {
+        "route": route,
+        "user_data": user_data
+    })
 
 
 @login_required
@@ -365,3 +378,77 @@ def route_search(request):
         "unknown_count": len(unknown),
     }
     return render(request, "routes/route_search.html", context)
+
+
+@login_required
+@require_POST
+def toggle_favorite(request, pk):
+    """Toggle favorite status for a route via AJAX"""
+    try:
+        route = get_object_or_404(Route, pk=pk)
+        favorite, created = Favorite.objects.get_or_create(
+            user=request.user, 
+            route=route
+        )
+        
+        if not created:
+            # Favorite already existed, so remove it
+            favorite.delete()
+            is_favorited = False
+        else:
+            # New favorite was created
+            is_favorited = True
+        
+        return JsonResponse({
+            'success': True,
+            'is_favorited': is_favorited,
+            'favorites_count': route.favorites.count()
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@login_required
+@require_POST
+def vote_route(request, pk):
+    """Handle upvote/downvote for a route via AJAX"""
+    try:
+        route = get_object_or_404(Route, pk=pk)
+        is_upvote = request.POST.get('is_upvote') == 'true'
+        
+        # Get or create the vote
+        vote, created = Vote.objects.get_or_create(
+            user=request.user,
+            route=route,
+            defaults={'is_upvote': is_upvote}
+        )
+        
+        if not created:
+            if vote.is_upvote == is_upvote:
+                # User clicked the same vote type - remove the vote
+                vote.delete()
+                user_vote = None
+            else:
+                # User switched vote type
+                vote.is_upvote = is_upvote
+                vote.save()
+                user_vote = is_upvote
+        else:
+            # New vote created
+            user_vote = is_upvote
+        
+        return JsonResponse({
+            'success': True,
+            'user_vote': user_vote,  # None, True (upvote), or False (downvote)
+            'upvotes_count': route.get_upvotes_count(),
+            'downvotes_count': route.get_downvotes_count(),
+            'net_votes': route.get_net_votes()
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)

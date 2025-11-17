@@ -13,4 +13,8 @@ urlpatterns = [
     path("", views.route_list, name="list"),
     path("<int:pk>/", views.route_detail, name="detail"),
     path("mine/", MyRoutesView.as_view(), name="my_routes"),
+    
+    # AJAX endpoints for favorites and votes
+    path("<int:pk>/favorite/", views.toggle_favorite, name="toggle_favorite"),
+    path("<int:pk>/vote/", views.vote_route, name="vote"),
 ]

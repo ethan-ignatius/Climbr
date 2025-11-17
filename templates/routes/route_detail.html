@@ -23,6 +23,50 @@
       <span class="badge">Difficulty: {{ route.difficulty }}</span>
     </div>
 
+    <!-- Row 2.5: Favorite and Vote buttons -->
+    {% if user.is_authenticated %}
+    <div class="route-interactions" style="margin-top:12px; padding:12px 0; border-bottom:1px solid #f3f4f6;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <button class="btn-favorite" data-route-id="{{ route.pk }}" id="favorite-btn-{{ route.pk }}">
+          <span class="heart-icon">🤍</span>
+          <span class="favorite-text">Favorite</span>
+        </button>
+        
+        <div class="vote-buttons">
+          <button class="btn-vote upvote" data-route-id="{{ route.pk }}" data-vote="true" id="upvote-btn-{{ route.pk }}">
+            <span class="vote-icon">👍</span>
+            <span class="vote-count">{{ route.get_upvotes_count }}</span>
+          </button>
+          <button class="btn-vote downvote" data-route-id="{{ route.pk }}" data-vote="false" id="downvote-btn-{{ route.pk }}">
+            <span class="vote-icon">👎</span>
+            <span class="vote-count">{{ route.get_downvotes_count }}</span>
+          </button>
+        </div>
+      </div>
+      
+      <div class="vote-summary" style="margin-top:8px; font-size:13px; color:#6b7280;">
+        <span>{{ route.get_upvotes_count }} upvote{{ route.get_upvotes_count|pluralize }} · {{ route.get_downvotes_count }} downvote{{ route.get_downvotes_count|pluralize }}</span>
+        {% if route.get_net_votes > 0 %}
+          <span class="positive-votes"> · +{{ route.get_net_votes }} net votes</span>
+        {% elif route.get_net_votes < 0 %}
+          <span class="negative-votes"> · {{ route.get_net_votes }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="route-interactions" style="margin-top:12px; padding:12px 0; border-bottom:1px solid #f3f4f6;">
+      <div class="vote-display" style="display:flex; gap:12px; font-size:13px; color:#6b7280;">
+        <span>👍 {{ route.get_upvotes_count }}</span>
+        <span>👎 {{ route.get_downvotes_count }}</span>
+        {% if route.get_net_votes != 0 %}
+          <span class="{% if route.get_net_votes > 0 %}positive-votes{% else %}negative-votes{% endif %}">
+            Net: {% if route.get_net_votes > 0 %}+{% endif %}{{ route.get_net_votes }}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Row 3: description -->
     {% if route.description %}
       <div style="margin-top:10px;"><p>Description: {{ route.description|linebreaksbr }}</p></div>
@@ -122,6 +166,182 @@
     })();
     
   </script>
+
+  {{ user_data|json_script:"user-data" }}
+  
+  <script>
+    // Favorite and vote functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      // Get user interaction data
+      const userDataElement = document.getElementById('user-data');
+      const userData = userDataElement ? JSON.parse(userDataElement.textContent) : {};
+      
+      // Set initial favorite state
+      const favoriteBtn = document.querySelector('.btn-favorite');
+      if (favoriteBtn && userData.is_favorited !== undefined) {
+        const heartIcon = favoriteBtn.querySelector('.heart-icon');
+        const favoriteText = favoriteBtn.querySelector('.favorite-text');
+        
+        if (userData.is_favorited) {
+          favoriteBtn.classList.add('favorited');
+          heartIcon.textContent = '❤️';
+          favoriteText.textContent = 'Favorited';
+        }
+      }
+      
+      // Set initial vote state
+      const upvoteBtn = document.querySelector('.btn-vote.upvote');
+      const downvoteBtn = document.querySelector('.btn-vote.downvote');
+      
+      if (upvoteBtn && downvoteBtn && userData.user_vote !== undefined) {
+        if (userData.user_vote === true) {
+          upvoteBtn.classList.add('active');
+        } else if (userData.user_vote === false) {
+          downvoteBtn.classList.add('active');
+        }
+      }
+
+      // Add event listeners for favorite button
+      if (favoriteBtn) {
+        favoriteBtn.addEventListener('click', function() {
+          const routeId = this.getAttribute('data-route-id');
+          toggleFavorite(routeId);
+        });
+      }
+
+      // Add event listeners for vote buttons
+      const voteButtons = document.querySelectorAll('.btn-vote');
+      voteButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const routeId = this.getAttribute('data-route-id');
+          const isUpvote = this.getAttribute('data-vote') === 'true';
+          voteRoute(routeId, isUpvote);
+        });
+      });
+    });
+
+    // Toggle favorite status for a route
+    async function toggleFavorite(routeId) {
+      try {
+        const response = await fetch(`/routes/${routeId}/favorite/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Update the button
+          const button = document.querySelector(`[data-route-id="${routeId}"].btn-favorite`);
+          if (button) {
+            const heartIcon = button.querySelector('.heart-icon');
+            const favoriteText = button.querySelector('.favorite-text');
+            
+            if (data.is_favorited) {
+              button.classList.add('favorited');
+              heartIcon.textContent = '❤️';
+              favoriteText.textContent = 'Favorited';
+            } else {
+              button.classList.remove('favorited');
+              heartIcon.textContent = '🤍';
+              favoriteText.textContent = 'Favorite';
+            }
+          }
+        } else {
+          alert('Error updating favorite: ' + data.error);
+        }
+      } catch (error) {
+        console.error('Error toggling favorite:', error);
+        alert('Error updating favorite. Please try again.');
+      }
+    }
+
+    // Vote on a route (upvote or downvote)
+    async function voteRoute(routeId, isUpvote) {
+      try {
+        const response = await fetch(`/routes/${routeId}/vote/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: `is_upvote=${isUpvote}`
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Update the vote buttons
+          const upvoteBtn = document.querySelector(`[data-route-id="${routeId}"].upvote`);
+          const downvoteBtn = document.querySelector(`[data-route-id="${routeId}"].downvote`);
+          
+          if (upvoteBtn && downvoteBtn) {
+            // Reset active states
+            upvoteBtn.classList.remove('active');
+            downvoteBtn.classList.remove('active');
+            
+            // Set active state based on user vote
+            if (data.user_vote === true) {
+              upvoteBtn.classList.add('active');
+            } else if (data.user_vote === false) {
+              downvoteBtn.classList.add('active');
+            }
+            
+            // Update vote counts
+            upvoteBtn.querySelector('.vote-count').textContent = data.upvotes_count || 0;
+            downvoteBtn.querySelector('.vote-count').textContent = data.downvotes_count || 0;
+            
+            // Update summary
+            const summary = document.querySelector('.vote-summary');
+            if (summary) {
+              const upvoteCount = data.upvotes_count || 0;
+              const downvoteCount = data.downvotes_count || 0;
+              const netVotes = data.net_votes || 0;
+              
+              const upvotePlural = upvoteCount === 1 ? '' : 's';
+              const downvotePlural = downvoteCount === 1 ? '' : 's';
+              let summaryText = `${upvoteCount} upvote${upvotePlural} · ${downvoteCount} downvote${downvotePlural}`;
+              
+              if (netVotes > 0) {
+                summaryText += ` <span class="positive-votes">· +${netVotes} net votes</span>`;
+              } else if (netVotes < 0) {
+                summaryText += ` <span class="negative-votes">· ${netVotes} net votes</span>`;
+              }
+              
+              summary.innerHTML = summaryText;
+            }
+          }
+        } else {
+          alert('Error voting: ' + data.error);
+        }
+      } catch (error) {
+        console.error('Error voting:', error);
+        alert('Error voting. Please try again.');
+      }
+    }
+
+    // Get CSRF token for AJAX requests
+    function getCsrfToken() {
+      const cookies = document.cookie.split(';');
+      for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'csrftoken') {
+          return value;
+        }
+      }
+      // Fallback: try to get from meta tag or form
+      const csrfMeta = document.querySelector('meta[name=csrf-token]');
+      if (csrfMeta) return csrfMeta.getAttribute('content');
+      
+      const csrfInput = document.querySelector('input[name=csrfmiddlewaretoken]');
+      if (csrfInput) return csrfInput.value;
+      
+      return '';
+    }
+  </script>
   <style>
     .btn-small {
       display: inline-flex;
@@ -155,6 +375,82 @@
 
     .route-actions {
       flex-shrink: 0;
+    }
+
+    /* Favorite and vote styles */
+    .btn-favorite {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      border: 1px solid #e5e7eb;
+      color: #6b7280;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-favorite:hover {
+      border-color: #ef4444;
+      color: #ef4444;
+    }
+
+    .btn-favorite.favorited {
+      border-color: #ef4444;
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.05);
+    }
+
+    .btn-favorite .heart-icon {
+      font-size: 16px;
+    }
+
+    .vote-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-vote {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: transparent;
+      border: 1px solid #e5e7eb;
+      color: #6b7280;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      min-width: 50px;
+      justify-content: center;
+    }
+
+    .btn-vote:hover {
+      border-color: #d1d5db;
+      background: #f9fafb;
+    }
+
+    .btn-vote.upvote.active {
+      border-color: #10b981;
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .btn-vote.downvote.active {
+      border-color: #ef4444;
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.05);
+    }
+
+    .positive-votes {
+      color: #10b981 !important;
+    }
+
+    .negative-votes {
+      color: #ef4444 !important;
     }
   </style>
 {% endblock %}
