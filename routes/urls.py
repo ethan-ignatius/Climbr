@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import MyRoutesView
+from .views import MyRoutesView, MyFavoriteRoutesView
 
 app_name = "routes"
 
@@ -12,8 +12,10 @@ urlpatterns = [
     path("<int:pk>/delete/", views.route_delete, name="delete"),
     path("", views.route_list, name="list"),
     path("<int:pk>/", views.route_detail, name="detail"),
+
     path("mine/", MyRoutesView.as_view(), name="my_routes"),
-    
+    path("favorites/", MyFavoriteRoutesView.as_view(), name="my_favorite_routes"),
+
     # AJAX endpoints for favorites and votes
     path("<int:pk>/favorite/", views.toggle_favorite, name="toggle_favorite"),
     path("<int:pk>/vote/", views.vote_route, name="vote"),

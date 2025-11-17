@@ -22,8 +22,8 @@ from .models import Route
 class MyRoutesView(LoginRequiredMixin, ListView):
     template_name = "routes/my_routes.html"
     context_object_name = "routes"
-    login_url = "login"          # or set settings.LOGIN_URL
-    redirect_field_name = "next" # preserves return path after login
+    login_url = "login"
+    redirect_field_name = "next"
 
     def get_queryset(self):
         """
@@ -33,10 +33,8 @@ class MyRoutesView(LoginRequiredMixin, ListView):
         user = self.request.user
         qs = Route.objects.all()
 
-        # Try common owner fields intelligently to avoid FieldErrors.
         fields = {f.name: f for f in Route._meta.get_fields()}
 
-        # author (FK or CharField)
         if "author" in fields:
             f = fields["author"]
             if getattr(f, "is_relation", False):
@@ -44,7 +42,6 @@ class MyRoutesView(LoginRequiredMixin, ListView):
             else:
                 return qs.filter(author__iexact=user.get_username()).order_by("-id")
 
-        # owner (FK or CharField)
         if "owner" in fields:
             f = fields["owner"]
             if getattr(f, "is_relation", False):
@@ -52,7 +49,6 @@ class MyRoutesView(LoginRequiredMixin, ListView):
             else:
                 return qs.filter(owner__iexact=user.get_username()).order_by("-id")
 
-        # created_by (FK or CharField)
         if "created_by" in fields:
             f = fields["created_by"]
             if getattr(f, "is_relation", False):
@@ -60,8 +56,28 @@ class MyRoutesView(LoginRequiredMixin, ListView):
             else:
                 return qs.filter(created_by__iexact=user.get_username()).order_by("-id")
 
-        # Fallback: nothing matched
         return qs.none()
+
+
+class MyFavoriteRoutesView(LoginRequiredMixin, ListView):
+    """
+    Shows all routes that the current user has favorited.
+    """
+    template_name = "routes/my_favorite_routes.html"
+    context_object_name = "routes"
+    login_url = "login"
+    redirect_field_name = "next"
+
+    def get_queryset(self):
+        user = self.request.user
+        return (
+            Route.objects
+            .filter(favorites__user=user)
+            .select_related("author")
+            .prefetch_related("images")  # keep similar to route_list
+            .distinct()
+            .order_by("-id")
+        )
 
 def _slugify_simple(value: str, allow_unicode: bool = False) -> str:
     """

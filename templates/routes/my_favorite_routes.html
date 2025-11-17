@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Routes{% endblock %}
+{% block title %}My Favorite Routes{% endblock %}
+
 {% block content %}
   <div class="page-title">
-    <h1>Routes</h1>
+    <h1>My Favorite Routes</h1>
   </div>
 
   <div class="stack">
@@ -101,12 +102,12 @@
       </div>
     {% empty %}
       <div class="card">
-        <p class="muted">No routes yet.</p>
+        <p class="muted">You haven't favorited any routes yet.</p>
       </div>
     {% endfor %}
   </div>
 
-  <!-- Lightbox root (single shared modal for the page) -->
+  <!-- Lightbox root (same as All Routes page) -->
   <div class="lightbox" id="lightbox" aria-hidden="true">
     <button class="close-btn" id="lightbox-close" aria-label="Close">✕</button>
     <div class="lightbox-body" style="text-align:center;">

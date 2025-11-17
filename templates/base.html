@@ -23,6 +23,7 @@
         <a href="{% url 'routes:list' %}">All Routes</a>
         <a href="{% url 'routes:search' %}">Search Routes</a>
         {% if user.is_authenticated %}
+          <a href="{% url 'routes:my_favorite_routes' %}">My Favorite Routes</a>
           <a href="{% url 'routes:my_routes' %}"> My Routes</a>
           <a href="{% url 'routes:add' %}">Add Route</a>
           <form action="{% url 'logout' %}" method="post" class="inline">
