@@ -5,16 +5,38 @@ from django.dispatch import receiver
 
 
 class UserProfile(models.Model):
+    EXPERIENCE_CHOICES = [
+        ('beginner', 'Beginner'),
+        ('intermediate', 'Intermediate'),
+        ('advanced', 'Advanced'),
+        ('expert', 'Expert'),
+    ]
+
     user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE, 
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
         related_name="profile"
+    )
+    experience_level = models.CharField(
+        max_length=20,
+        choices=EXPERIENCE_CHOICES,
+        default='beginner',
+        help_text="Your climbing experience level"
+    )
+    bio = models.TextField(
+        blank=True,
+        max_length=500,
+        help_text="Tell us about yourself and your climbing experience"
+    )
+    email = models.EmailField(
+        blank=True,
+        help_text="Contact email"
     )
     latitude = models.FloatField(blank=True, null=True)
     longitude = models.FloatField(blank=True, null=True)
     location_name = models.CharField(
-        max_length=200, 
-        blank=True, 
+        max_length=200,
+        blank=True,
         help_text="e.g., Boulder, CO"
     )
     created_at = models.DateTimeField(auto_now_add=True)

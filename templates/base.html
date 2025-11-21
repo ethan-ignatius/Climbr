@@ -26,6 +26,7 @@
           <a href="{% url 'routes:my_favorite_routes' %}">My Favorite Routes</a>
           <a href="{% url 'routes:my_routes' %}"> My Routes</a>
           <a href="{% url 'routes:add' %}">Add Route</a>
+          <a href="{% url 'accounts:profile' %}">My Profile</a>
           <form action="{% url 'logout' %}" method="post" class="inline">
             {% csrf_token %}
             <button type="submit" class="btn">Log out</button>
