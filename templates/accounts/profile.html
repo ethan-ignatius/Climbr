@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.user.username }}'s Profile{% endblock %}
+{% block content %}
+  <div class="card" style="max-width:800px; margin:0 auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <h1>{{ profile.user.username }}'s Profile</h1>
+      {% if request.user == profile.user %}
+        <a href="{% url 'accounts:profile_edit' %}" class="btn">Edit Profile</a>
+      {% endif %}
+    </div>
+
+    <div class="form-grid" style="grid-template-columns:1fr;">
+      <div class="field">
+        <label><strong>Experience Level:</strong></label>
+        <p>{{ profile.get_experience_level_display }}</p>
+      </div>
+
+      {% if profile.bio %}
+      <div class="field">
+        <label><strong>Bio:</strong></label>
+        <p style="white-space: pre-wrap;">{{ profile.bio }}</p>
+      </div>
+      {% endif %}
+
+      {% if profile.email %}
+      <div class="field">
+        <label><strong>Email:</strong></label>
+        <p>{{ profile.email }}</p>
+      </div>
+      {% endif %}
+
+      {% if profile.location_name %}
+      <div class="field">
+        <label><strong>Location:</strong></label>
+        <p>{{ profile.location_name }}</p>
+      </div>
+      {% endif %}
+
+      <div class="field">
+        <label><strong>Member Since:</strong></label>
+        <p>{{ profile.created_at|date:"F Y" }}</p>
+      </div>
+    </div>
+
+    {% if request.user == profile.user %}
+    <div style="margin-top:2rem;">
+      <a href="{% url 'routes:my_routes' %}" class="btn" style="margin-right:0.5rem;">My Routes</a>
+      <a href="{% url 'routes:my_favorite_routes' %}" class="btn">My Favorites</a>
+    </div>
+    {% endif %}
+  </div>
+{% endblock %}
