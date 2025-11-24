@@ -95,5 +95,129 @@
 
   { "model": "routes.routeimage", "pk": 3001, "fields": {
       "route": 3, "image": "routes/pictures/climber1_crack-chronicles_1.jpg", "alt_text": "Crack Chronicles - hand jams", "order": 1
-  }}
+  }},
+
+  {
+    "model": "accounts.userprofile",
+    "pk": 101,
+    "fields": {
+      "user": 101,
+      "experience_level": "Intermediate",
+      "bio": "Climber1 is all about long endurance routes and exploring sandstone canyons. Always looking for new partners and new challenges.",
+      "email": "climber1@example.com",
+      "location_name": "Boulder, CO",
+      "latitude": null,
+      "longitude": null,
+      "created_at": "2025-09-01T12:00:00Z",
+      "updated_at": "2025-09-01T12:00:00Z"
+    }
+  },
+  {
+    "model": "accounts.userprofile",
+    "pk": 102,
+    "fields": {
+      "user": 102,
+      "experience_level": "Beginner",
+      "bio": "Climber2 recently started climbing and loves technical slab routes. Enjoys learning footwork and balance techniques.",
+      "email": "climber2@example.com",
+      "location_name": "Flagstaff, AZ",
+      "latitude": null,
+      "longitude": null,
+      "created_at": "2025-09-01T12:00:00Z",
+      "updated_at": "2025-09-01T12:00:00Z"
+    }
+  },
+
+  {
+    "model": "routes.favorite",
+    "pk": 5001,
+    "fields": {
+      "user": 101,
+      "route": 3,
+      "created_at": "2025-09-10T10:15:00Z"
+    }
+  },
+  {
+    "model": "routes.favorite",
+    "pk": 5002,
+    "fields": {
+      "user": 101,
+      "route": 1,
+      "created_at": "2025-09-10T10:15:00Z"
+    }
+  },
+  {
+    "model": "routes.favorite",
+    "pk": 5003,
+    "fields": {
+      "user": 102,
+      "route": 2,
+      "created_at": "2025-09-10T10:15:00Z"
+    }
+  },
+  {
+    "model": "routes.favorite",
+    "pk": 5004,
+    "fields": {
+      "user": 102,
+      "route": 3,
+      "created_at": "2025-09-10T10:15:00Z"
+    }
+  },
+
+  {
+    "model": "routes.vote",
+    "pk": 6001,
+    "fields": {
+      "user": 101,
+      "route": 1,
+      "is_upvote": true,
+      "created_at": "2025-09-11T09:00:00Z",
+      "updated_at": "2025-09-11T09:00:00Z"
+    }
+  },
+  {
+    "model": "routes.vote",
+    "pk": 6002,
+    "fields": {
+      "user": 101,
+      "route": 2,
+      "is_upvote": false,
+      "created_at": "2025-09-11T09:05:00Z",
+      "updated_at": "2025-09-11T09:05:00Z"
+    }
+  },
+  {
+    "model": "routes.vote",
+    "pk": 6003,
+    "fields": {
+      "user": 101,
+      "route": 3,
+      "is_upvote": true,
+      "created_at": "2025-09-11T09:10:00Z",
+      "updated_at": "2025-09-11T09:10:00Z"
+    }
+  },
+  {
+    "model": "routes.vote",
+    "pk": 6004,
+    "fields": {
+      "user": 102,
+      "route": 1,
+      "is_upvote": false,
+      "created_at": "2025-09-11T09:15:00Z",
+      "updated_at": "2025-09-11T09:15:00Z"
+    }
+  },
+  {
+    "model": "routes.vote",
+    "pk": 6005,
+    "fields": {
+      "user": 102,
+      "route": 2,
+      "is_upvote": true,
+      "created_at": "2025-09-11T09:20:00Z",
+      "updated_at": "2025-09-11T09:20:00Z"
+    }
+  }
 ]

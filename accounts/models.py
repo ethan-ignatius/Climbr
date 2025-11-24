@@ -52,6 +52,8 @@ class UserProfile(models.Model):
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_user_profile(sender, instance, created, **kwargs):
     """Create a UserProfile when a new user is created."""
+    if kwargs.get("raw", False):
+        return
     if created:
         UserProfile.objects.create(user=instance)
 
@@ -59,5 +61,7 @@ def create_user_profile(sender, instance, created, **kwargs):
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def save_user_profile(sender, instance, **kwargs):
     """Save the UserProfile when the user is saved."""
+    if kwargs.get("raw", False):
+        return
     if hasattr(instance, 'profile'):
         instance.profile.save()
