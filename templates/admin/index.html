@@ -1,0 +1,18 @@
+{% extends "admin/index.html" %}
+{% load static %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/" class="button" style="
+        background: #2d7dd2;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+    ">
+        Return to Site
+    </a>
+</div>
+
+{{ block.super }}
+{% endblock %}
