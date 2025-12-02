@@ -27,6 +27,9 @@
           <a href="{% url 'routes:my_routes' %}"> My Routes</a>
           <a href="{% url 'routes:add' %}">Add Route</a>
           <a href="{% url 'accounts:profile' %}">My Profile</a>
+          {% if request.user.is_staff %}
+            <a class="btn btn-danger" href="/admin/">Admin&nbsp;Panel</a>
+          {% endif %}
           <form action="{% url 'logout' %}" method="post" class="inline">
             {% csrf_token %}
             <button type="submit" class="btn">Log out</button>
