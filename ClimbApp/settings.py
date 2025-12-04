@@ -78,9 +78,13 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# ---- Static (global static/ folder) ----
-STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_URL = '/static/'
+
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # ---- Auth redirects ----
 LOGIN_REDIRECT_URL = "home"
