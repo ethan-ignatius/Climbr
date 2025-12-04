@@ -8,7 +8,7 @@
         <h1 style="margin:0;">{{ route.title }}</h1>
         <small class="muted">by {{ route.author.username }} · {{ route.created_at|date:"Y-m-d H:i" }}</small>
       </div>
-      {% if user.is_authenticated and user == route.author %}
+      {% if user.is_authenticated and user == route.author or user.is_staff or user.is_superuser %}
         <div class="route-actions" style="display: flex; gap: 8px;">
           <form action="{% url 'routes:delete' route.pk %}" method="POST" style="display:inline;">
             {% csrf_token %}

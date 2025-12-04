@@ -178,8 +178,8 @@ def route_delete(request, pk: int):
     )
 
     # Checks if user is the author
-    if route.author != request.user:
-        messages.error(request, "You can only delete routes you created.")
+    if not (request.user.is_staff or request.user.is_superuser or route.author == request.user):
+        messages.error(request, "You can only modify routes you created.")
         return redirect("routes:detail", pk=route.pk)
     
     if request.method == "POST":
@@ -200,8 +200,8 @@ def route_edit(request, pk: int):
     )
     
     # Check if user is the author
-    if route.author != request.user:
-        messages.error(request, "You can only edit routes you created.")
+    if not (request.user.is_staff or request.user.is_superuser or route.author == request.user):
+        messages.error(request, "You can only modify routes you created.")
         return redirect("routes:detail", pk=route.pk)
     
     if request.method == "POST":
